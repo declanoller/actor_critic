@@ -19,7 +19,7 @@ class PuckworldAgent:
 
 
         self.circ_rad = self.xlim/20.0
-        self.addTarget()
+        self.resetTarget()
 
         self.pos0 = np.array([self.xlim/2.0,self.ylim/2.0])
         self.v0 = np.array([0.0,0.0])
@@ -39,7 +39,7 @@ class PuckworldAgent:
         self.r_hist.append(self.reward())
 
 
-    def addTarget(self):
+    def resetTarget(self):
 
         self.target = self.circ_rad + np.random.random((2,))*(1-2*self.circ_rad)
 
@@ -113,7 +113,7 @@ class PuckworldAgent:
 
     def initEpisode(self):
         self.resetStateValues()
-        #self.addTarget()
+        self.resetTarget()
 
 
     def iterate(self,action):

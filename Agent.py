@@ -7,6 +7,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+import FileSystemTools as fst
+
+
+
 
 class DQN(nn.Module):
 
@@ -26,34 +30,40 @@ class DQN(nn.Module):
 
 class Agent:
 
-    def __init__(self,env,**kwargs):
+    def __init__(self,**kwargs):
 
-        self.env = env
         self.agent_class = kwargs.get('agent_class',None)
         self.agent_class_name = self.agent_class.__name__
         self.agent = self.agent_class()
 
-        self.time_step = kwargs.get('dt',10**-1)
-        self.ep_time = kwargs.get('ep_time',100)
-        self.steps = int(self.ep_time/self.time_step)
+        self.params = {}
+        self.params['gamma'] = kwargs.get('gamma',1.0)
+        self.params['alpha'] = kwargs.get('alpha',10**-1)
+        self.params['beta'] = kwargs.get('beta',None)
+        self.params['epsilon'] = kwargs.get('epsilon',0.0283289)
 
-        self.gamma = kwargs.get('gamma',1.0)
-        self.alpha = kwargs.get('alpha',10**-1)
-        self.beta = kwargs.get('beta',.2)
-        self.epsilon = kwargs.get('epsilon',0.0)
+        self.params['N_steps'] = kwargs.get('N_steps',10**3)
+        self.params['N_batch'] = kwargs.get('N_batch',20)
+        self.params['N_hidden_layer_nodes'] = kwargs.get('N_hidden_layer_nodes',100)
 
-        self.N_batch = 20
-        self.N_hidden_layer_nodes = 100
         self.features = kwargs.get('features','DQN')
+
+        self.dir = kwargs.get('dir','')
+        self.date_time = kwargs.get('date_time',fst.getDateString())
+        self.base_fname = fst.paramDictToFnameStr(self.params) + '_' + self.date_time + '.png'
+        self.fname = fst.combineDirAndFile(self.dir,self.base_fname)
+
+
         self.initLearningParams()
 
-        #self.createFigure()
+        self.createFigure()
 
 
     def initLearningParams(self):
 
         self.dtype = torch.float64
-        self.device = torch.device("cpu")
+        #self.device = torch.device("cpu")
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         torch.set_default_dtype(self.dtype)
         torch.set_default_tensor_type(torch.DoubleTensor)
@@ -71,7 +81,7 @@ class Agent:
 
         if self.features == 'DQN':
 
-            D_in, H, D_out = self.agent.N_state_terms, self.N_hidden_layer_nodes, self.agent.N_actions
+            D_in, H, D_out = self.agent.N_state_terms, self.params['N_hidden_layer_nodes'], self.agent.N_actions
             self.policy_NN = DQN(D_in,H,D_out)
             self.target_NN = DQN(D_in,H,D_out)
             self.target_NN.load_state_dict(self.policy_NN.state_dict())
@@ -80,10 +90,9 @@ class Agent:
             self.samples_Q = []
 
 
-
-
     def updateFrozenQ(self):
         self.target_NN.load_state_dict(self.policy_NN.state_dict())
+
 
     def resetStateValues(self):
         self.agent.resetStateValues()
@@ -113,6 +122,7 @@ class Agent:
             action = np.random.choice(list(range(self.agent.N_actions)),p=pi_vals.detach().numpy())
             return(action)
 
+
     def policyVal(self,state_vec,action):
 
         #state_vec = self.agent.getStateVec()
@@ -134,6 +144,7 @@ class Agent:
         Q_s_a = self.policy_NN(state_vec)
         return(Q_s_a)
 
+
     def forwardPassQFrozen(self,state_vec):
         Q_s_a = self.target_NN(state_vec)
         return(Q_s_a)
@@ -150,7 +161,7 @@ class Agent:
 
 
     def epsGreedyAction(self,state_vec):
-        if random()>self.epsilon:
+        if random()>self.params['epsilon']:
             return(self.greedyAction(state_vec))
         else:
             return(self.getRandomAction())
@@ -173,9 +184,9 @@ class Agent:
         a = self.epsGreedyAction(s)
 
         for i in range(N_steps):
-            self.epsilon *= .99
+            self.params['epsilon'] *= .99
 
-            if i%11==0 and i>self.N_batch:
+            if i%11==0 and i>self.params['N_batch']:
                 self.updateFrozenQ()
 
             self.agent.iterate(a)
@@ -188,10 +199,10 @@ class Agent:
             experience = (s,a,r,s_next)
             self.samples_Q.append(experience)
 
-            if len(self.samples_Q)>=2*self.N_batch:
+            if len(self.samples_Q)>=2*self.params['N_batch']:
 
                 #Get random batch
-                batch_Q_samples = sample(self.samples_Q,self.N_batch)
+                batch_Q_samples = sample(self.samples_Q,self.params['N_batch'])
                 states = torch.Tensor(np.array([samp[0] for samp in batch_Q_samples]))
                 actions = [samp[1] for samp in batch_Q_samples]
                 rewards = torch.Tensor([samp[2] for samp in batch_Q_samples])
@@ -200,8 +211,8 @@ class Agent:
                 Q_cur = self.forwardPassQ(states)[list(range(len(actions))),actions]
                 Q_next = torch.max(self.forwardPassQFrozen(states_next),dim=1)[0]
 
-                #TD0_error = (rewards + self.gamma*Q_next - Q_cur).pow(2).sum()#.clamp(max=1)
-                TD0_error = F.smooth_l1_loss(Q_cur,(rewards + self.gamma*Q_next).detach())
+                #TD0_error = (rewards + self.params['gamma']*Q_next - Q_cur).pow(2).sum()#.clamp(max=1)
+                TD0_error = F.smooth_l1_loss(Q_cur,(rewards + self.params['gamma']*Q_next).detach())
 
                 self.optimizer.zero_grad()
                 TD0_error.backward()
@@ -215,6 +226,12 @@ class Agent:
             if show_plot:
                 self.plotAll()
                 self.fig.canvas.draw()
+
+        if save_plot:
+            self.plotAll()
+            plt.savefig(self.fname)
+
+        plt.close('all')
 
         print('puck-target dist: {:.2f}, R_tot/N_steps: {:.2f}'.format(self.agent.puckTargetDist(),R_tot/N_steps))
         return(R_tot)
@@ -266,7 +283,6 @@ class Agent:
 
 
     def showFig(self):
-
         plt.show(block=False)
 
 
