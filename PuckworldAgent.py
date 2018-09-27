@@ -1,5 +1,6 @@
 import matplotlib.pyplot as plt
 import numpy as np
+from math import sqrt
 
 
 
@@ -10,22 +11,23 @@ class PuckworldAgent:
 
         (self.xlim,self.ylim) = (1.0,1.0)
         self.lims = np.array((self.xlim,self.ylim))
-        self.a = 0.1
+        self.max_dist = sqrt(np.sum(self.lims**2))
+        self.a = 0.2
         self.time_step = kwargs.get('dt',10**-1)
 
         self.N_actions = 4
 
 
+        self.circ_rad = self.xlim/20.0
+        self.addTarget()
 
         self.pos0 = np.array([self.xlim/2.0,self.ylim/2.0])
         self.v0 = np.array([0.0,0.0])
         self.resetStateValues()
         self.accel_array = np.array([[0,1],[0,-1],[-1,0],[1,0]])
 
-        self.circ_rad = self.xlim/20.0
-        self.target = None
 
-        self.addTarget()
+
         self.N_state_terms = len(self.getStateVec())
 
 
@@ -50,21 +52,23 @@ class PuckworldAgent:
         #boundary, but it might be cool to make periodic bry conds, to see if it would
         #learn to zoom around it.
 
-        a = self.actionToAccel(action)
+        a = self.actionToAccel(action) - .3*self.v
 
-        self.v_next = self.v + a*self.time_step
-        self.pos_next = self.pos + self.v_next*self.time_step
+        v_next = self.v + a*self.time_step
+        pos_next = self.pos + v_next*self.time_step
 
         #To handle the walls
         for i in [0,1]:
-            if self.pos_next[i] < (0 + self.circ_rad):
-                self.pos_next[i] = 0 + self.circ_rad
-                self.v_next[i] = -self.v_next[i]
+            if pos_next[i] < (0 + self.circ_rad):
+                pos_next[i] = 0 + self.circ_rad
+                v_next[i] = -v_next[i]
 
-            if self.pos_next[i] > (self.lims[i] - self.circ_rad):
-                self.pos_next[i] = self.lims[i] - self.circ_rad
-                self.v_next[i] = -self.v_next[i]
+            if pos_next[i] > (self.lims[i] - self.circ_rad):
+                pos_next[i] = self.lims[i] - self.circ_rad
+                v_next[i] = -v_next[i]
 
+        self.pos = pos_next
+        self.v = v_next
         self.addToHist()
 
 
@@ -86,6 +90,9 @@ class PuckworldAgent:
 
     def getStateVec(self):
         assert self.target is not None, 'Need target to get state vec'
+        #return(np.concatenate((self.pos,self.v,self.target,(self.pos-self.target)**2)))
+        #return(np.concatenate((self.pos,self.v,self.target,[(self.pos[0]-self.target[0])],[(self.pos[1]-self.target[1])])))
+        #return(np.array([(self.pos[0]-self.target[0]),(self.pos[1]-self.target[1])]))
         return(np.concatenate((self.pos,self.v,self.target)))
 
 
@@ -94,7 +101,14 @@ class PuckworldAgent:
         assert self.target is not None, 'Need a target'
         #Currently just gonna do a limited inverse from the pos of the target.
         max_R = 10
-        return(1/(1/max_R + np.sqrt(np.sum((self.pos-self.target)**2))))
+        #return(max_R*(.5*self.max_dist-self.puckTargetDist()) - 1)
+        #return(1/(1/max_R + sqrt(np.sum((self.pos-self.target)**2)) ) )
+        #return(1.0/(self.puckTargetDist()**2 + 1/max_R))
+        return(-max_R*self.puckTargetDist())
+
+
+    def puckTargetDist(self):
+        return(sqrt(np.sum((self.pos-self.target)**2)))
 
 
     def initEpisode(self):
@@ -115,14 +129,8 @@ class PuckworldAgent:
         self.v_hist = np.array([self.v])
         self.action_hist = [0]
         self.t = [0]
-        self.r_hist = [0]
         self.a_hist = [0]
-
-
-    def updateStateValues(self):
-        self.pos = self.pos_next
-        self.v = self.v_next
-
+        self.r_hist = []
 
 
     def drawState(self,ax):
