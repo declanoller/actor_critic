@@ -69,6 +69,7 @@ class Agent:
         self.dtype = torch.float64
         #self.device = torch.device("cpu")
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print('\nusing device:',self.device)
 
         torch.set_default_dtype(self.dtype)
         torch.set_default_tensor_type(torch.DoubleTensor)
