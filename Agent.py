@@ -72,7 +72,10 @@ class Agent:
         print('\nusing device:',self.device)
 
         torch.set_default_dtype(self.dtype)
-        torch.set_default_tensor_type(torch.DoubleTensor)
+        if self.device == 'cpu':
+            torch.set_default_tensor_type(torch.DoubleTensor)
+        if self.device == 'cuda':
+            torch.set_default_tensor_type(torch.cuda.DoubleTensor)
 
 
         if self.features == 'linear':
@@ -359,7 +362,7 @@ class Agent:
         self.agent.initEpisode()
 
         s = self.agent.getStateVec()
-        a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)))).to(device)
+        a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)))).to(self.device)
 
         for i in range(self.params['N_steps']):
             self.params['epsilon'] *= .99
@@ -372,7 +375,7 @@ class Agent:
             R_tot += r
 
             s_next = self.agent.getStateVec()
-            a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s_next,device=self.device),dim=0)))).to(device)
+            a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s_next,device=self.device),dim=0)))).to(self.device)
 
             experience = (s,a,r,s_next)
             self.samples_Q.append(experience)
@@ -386,21 +389,21 @@ class Agent:
                 rewards = torch.Tensor([samp[2] for samp in batch_Q_samples],device=self.device)
                 states_next = torch.Tensor([samp[3] for samp in batch_Q_samples],device=self.device)
 
-                Q_cur = (self.critic_NN(states)[list(range(len(actions))),actions]).to(device)
-                actions_next = torch.argmax(self.actor_NN(states_next),dim=1).to(device)
-                Q_next = (self.target_critic_NN(states_next)[list(range(len(actions_next))),actions_next]).to(device)
+                Q_cur = (self.critic_NN(states)[list(range(len(actions))),actions]).to(self.device)
+                actions_next = torch.argmax(self.actor_NN(states_next),dim=1).to(self.device)
+                Q_next = (self.target_critic_NN(states_next)[list(range(len(actions_next))),actions_next]).to(self.device)
 
                 #Q_cur = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.Tensor(s),dim=0)))[a]
                 #Q_next = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.Tensor(s_next),dim=0)))[a_next]
 
-                pi = (self.actor_NN(states)[list(range(len(actions))),actions]).to(device)
+                pi = (self.actor_NN(states)[list(range(len(actions))),actions]).to(self.device)
 
                 if self.params['loss_method'] == 'smoothL1':
-                    TD0_error = F.smooth_l1_loss(Q_cur,(rewards + self.params['gamma']*Q_next).detach()).to(device)
+                    TD0_error = F.smooth_l1_loss(Q_cur,(rewards + self.params['gamma']*Q_next).detach()).to(self.device)
                 if self.params['loss_method'] == 'L2':
-                    TD0_error = (rewards + self.params['gamma']*Q_next - Q_cur).pow(2).sum().to(device)#.clamp(max=1)
+                    TD0_error = (rewards + self.params['gamma']*Q_next - Q_cur).pow(2).sum().to(self.device)#.clamp(max=1)
 
-                J = (Q_cur*torch.log(pi)).sum().to(device)
+                J = (Q_cur*torch.log(pi)).sum().to(self.device)
 
                 self.actor_optimizer.zero_grad()
                 self.critic_optimizer.zero_grad()
