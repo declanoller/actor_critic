@@ -11,6 +11,7 @@ def multipleEpisodesNewAgent(**kwargs):
     params = {}
     params['N_eps'] = kwargs.get('N_eps',5)
     params['N_steps'] = kwargs.get('N_steps',10**3)
+    show_plot = kwargs.get('show_plot',False)
 
     params_str = fst.paramDictToFnameStr(params)
     date_time = fst.getDateString()
@@ -20,15 +21,17 @@ def multipleEpisodesNewAgent(**kwargs):
 
     R_tots = []
     for i in range(params['N_eps']):
-        ag = Agent(agent_class=PuckworldAgent,features='DQN',dir=dir)
-        r_tot = ag.episode(show_plot=False,save_plot=True,N_steps=params['N_steps'])
+        ag = Agent(**kwargs,agent_class=PuckworldAgent,dir=dir)
+        r_tot = ag.episode(show_plot=False,save_plot=True)
         R_tots.append(r_tot)
 
     fig = plt.figure(figsize=(8,8))
     ax = fig.subplots(1,1)
     ax.plot(R_tots)
     plt.savefig(fst.combineDirAndFile(dir,fname))
-    plot.close()
+    if show_plot:
+        plt.show()
+    plt.close()
     print('\n\ntook {} to execute'.format(fst.getTimeDiffStr(st)))
 
 
@@ -60,7 +63,7 @@ def varyParam(**kwargs):
         for j in range(N_runs):
             print('run ',j)
 
-            ag = Agent(**kws,agent_class=PuckworldAgent,features='DQN',dir=dir)
+            ag = Agent(**kws,agent_class=PuckworldAgent,dir=dir)
             r_tot = ag.episode(show_plot=False,save_plot=True)
             results.append(r_tot)
 
