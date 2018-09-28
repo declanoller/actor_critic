@@ -115,9 +115,9 @@ class Agent:
                 NL_fn = F.sigmoid
 
             #The "actor" is the policy network, the "critic" is the Q network.
-            self.actor_NN = DQN(D_in,H,D_out,NL_fn=NL_fn)
-            self.critic_NN = DQN(D_in,H,D_out,NL_fn=NL_fn)
-            self.target_critic_NN = DQN(D_in,H,D_out,NL_fn=NL_fn)
+            self.actor_NN = DQN(D_in,H,D_out,NL_fn=NL_fn).to(self.device)
+            self.critic_NN = DQN(D_in,H,D_out,NL_fn=NL_fn).to(self.device)
+            self.target_critic_NN = DQN(D_in,H,D_out,NL_fn=NL_fn).to(self.device)
             self.target_critic_NN.load_state_dict(self.critic_NN.state_dict())
             self.target_critic_NN.eval()
             self.actor_optimizer = optim.RMSprop(self.actor_NN.parameters())
