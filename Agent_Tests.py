@@ -3,10 +3,11 @@ from PuckworldAgent import PuckworldAgent
 import matplotlib.pyplot as plt
 from statistics import mean,stdev
 import FileSystemTools as fst
+from time import time
 
 
 def multipleEpisodesNewAgent(**kwargs):
-
+    st = fst.getCurTimeObj()
     params = {}
     params['N_eps'] = kwargs.get('N_eps',5)
     params['N_steps'] = kwargs.get('N_steps',10**3)
@@ -28,11 +29,14 @@ def multipleEpisodesNewAgent(**kwargs):
     ax.plot(R_tots)
     plt.savefig(fst.combineDirAndFile(dir,fname))
     plot.close()
+    print('\n\ntook {} to execute'.format(fst.getTimeDiffStr(st)))
 
 
 
 
 def varyParam(**kwargs):
+
+    st = fst.getCurTimeObj()
 
     date_time = fst.getDateString()
     notes = kwargs.get('notes','')
@@ -78,7 +82,7 @@ def varyParam(**kwargs):
     axes.set_ylabel('Total reward')
 
     plt.savefig(fname)
-
+    print('\n\ntook {} to execute'.format(fst.getTimeDiffStr(st)))
     if show_plot:
         plt.show()
 

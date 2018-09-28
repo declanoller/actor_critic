@@ -14,16 +14,18 @@ import FileSystemTools as fst
 
 class DQN(nn.Module):
 
-    def __init__(self,D_in,H,D_out):
+    def __init__(self,D_in,H,D_out,NL_fn=torch.tanh):
         super(DQN, self).__init__()
 
         self.lin1 = nn.Linear(D_in,H)
         self.lin2 = nn.Linear(H,D_out)
+        self.NL_fn = NL_fn
 
     def forward(self, x):
         x = self.lin1(x)
         #x = F.relu(x)
-        x = torch.tanh(x)
+        #x = torch.tanh(x)
+        x = self.NL_fn(x)
         x = self.lin2(x)
         return(x)
 
@@ -47,6 +49,9 @@ class Agent:
         self.params['N_hidden_layer_nodes'] = kwargs.get('N_hidden_layer_nodes',100)
 
         self.features = kwargs.get('features','DQN')
+        self.params['NL_fn'] = kwargs.get('NL_fn','tanh')
+        self.params['loss_method'] = kwargs.get('loss','smoothL1')
+        self.params['clamp_grad'] = kwargs.get('clamp_grad',True)
 
         self.dir = kwargs.get('dir','')
         self.date_time = kwargs.get('date_time',fst.getDateString())
@@ -82,11 +87,35 @@ class Agent:
         if self.features == 'DQN':
 
             D_in, H, D_out = self.agent.N_state_terms, self.params['N_hidden_layer_nodes'], self.agent.N_actions
-            self.policy_NN = DQN(D_in,H,D_out)
-            self.target_NN = DQN(D_in,H,D_out)
+            if self.params['NL_fn'] == 'tanh':
+                NL_fn = torch.tanh
+            if self.params['NL_fn'] == 'relu':
+                NL_fn = F.relu
+            if self.params['NL_fn'] == 'sigmoid':
+                NL_fn = F.sigmoid
+
+            self.policy_NN = DQN(D_in,H,D_out,NL_fn=NL_fn)
+            self.target_NN = DQN(D_in,H,D_out,NL_fn=NL_fn)
             self.target_NN.load_state_dict(self.policy_NN.state_dict())
             self.target_NN.eval()
             self.optimizer = optim.RMSprop(self.policy_NN.parameters())
+            self.samples_Q = []
+
+        if self.features == 'AC':
+
+            D_in, H, D_out = self.agent.N_state_terms, self.params['N_hidden_layer_nodes'], self.agent.N_actions
+            if self.params['NL_fn'] == 'tanh':
+                NL_fn = torch.tanh
+            if self.params['NL_fn'] == 'relu':
+                NL_fn = F.relu
+            if self.params['NL_fn'] == 'sigmoid':
+                NL_fn = F.sigmoid
+
+            #The "actor" is the policy network, the "critic" is the Q network.
+            self.actor_NN = DQN(D_in,H,D_out,NL_fn=NL_fn)
+            self.critic_NN = DQN(D_in,H,D_out,NL_fn=NL_fn)
+            self.actor_optimizer = optim.RMSprop(self.actor_NN.parameters())
+            self.critic_optimizer = optim.RMSprop(self.critic_NN.parameters())
             self.samples_Q = []
 
 
@@ -211,14 +240,96 @@ class Agent:
                 Q_cur = self.forwardPassQ(states)[list(range(len(actions))),actions]
                 Q_next = torch.max(self.forwardPassQFrozen(states_next),dim=1)[0]
 
-                #TD0_error = (rewards + self.params['gamma']*Q_next - Q_cur).pow(2).sum()#.clamp(max=1)
-                TD0_error = F.smooth_l1_loss(Q_cur,(rewards + self.params['gamma']*Q_next).detach())
+                if self.params['loss_method'] == 'smoothL1':
+                    TD0_error = F.smooth_l1_loss(Q_cur,(rewards + self.params['gamma']*Q_next).detach())
+                if self.params['loss_method'] == 'L2':
+                    TD0_error = (rewards + self.params['gamma']*Q_next - Q_cur).pow(2).sum()#.clamp(max=1)
+
 
                 self.optimizer.zero_grad()
                 TD0_error.backward()
-                for param in self.policy_NN.parameters():
-                    param.grad.data.clamp_(-1, 1)
+                if self.params['clamp_grad']:
+                    for param in self.policy_NN.parameters():
+                        param.grad.data.clamp_(-1, 1)
                 self.optimizer.step()
+
+            s = s_next
+            a = a_next
+
+            if show_plot:
+                self.plotAll()
+                self.fig.canvas.draw()
+
+        if save_plot:
+            self.plotAll()
+            plt.savefig(self.fname)
+
+        plt.close('all')
+
+        print('puck-target dist: {:.2f}, R_tot/N_steps: {:.2f}'.format(self.agent.puckTargetDist(),R_tot/N_steps))
+        return(R_tot)
+
+
+
+    def ACepisode(self,show_plot=True,save_plot=False,N_steps=10**3):
+
+        R_tot = 0
+
+        if show_plot:
+            self.showFig()
+
+        self.agent.initEpisode()
+
+        s = self.agent.getStateVec()
+        a = self.epsGreedyAction(s)
+
+        for i in range(N_steps):
+            self.params['epsilon'] *= .99
+
+            if i%11==0 and i>self.params['N_batch']:
+                self.updateFrozenQ()
+
+            self.agent.iterate(a)
+            r = self.agent.reward()
+            R_tot += r
+
+            s_next = self.agent.getStateVec()
+            a_next = self.epsGreedyAction(s_next)
+
+            experience = (s,a,r,s_next)
+            self.samples_Q.append(experience)
+
+            if len(self.samples_Q)>=2*self.params['N_batch']:
+
+                #Get random batch
+                batch_Q_samples = sample(self.samples_Q,self.params['N_batch'])
+                states = torch.Tensor(np.array([samp[0] for samp in batch_Q_samples]))
+                actions = [samp[1] for samp in batch_Q_samples]
+                rewards = torch.Tensor([samp[2] for samp in batch_Q_samples])
+                states_next = torch.Tensor([samp[3] for samp in batch_Q_samples])
+
+            Q_cur = self.forwardPassQ(states)[list(range(len(actions))),actions]
+            Q_next = torch.max(self.forwardPassQFrozen(states_next),dim=1)[0]
+
+            if self.params['loss_method'] == 'smoothL1':
+                TD0_error = F.smooth_l1_loss(Q_cur,(rewards + self.params['gamma']*Q_next).detach())
+            if self.params['loss_method'] == 'L2':
+                TD0_error = (rewards + self.params['gamma']*Q_next - Q_cur).pow(2).sum()#.clamp(max=1)
+
+            J = Q_cur*torch.log(pi)
+
+
+            self.actor_optimizer.zero_grad()
+            self.critic_optimizer.zero_grad()
+            TD0_error.backward()
+            J.backward()
+            if self.params['clamp_grad']:
+                for param in self.actor_NN.parameters():
+                    param.grad.data.clamp_(-1, 1)
+                for param in self.critic_NN.parameters():
+                    param.grad.data.clamp_(-1, 1)
+            self.actor_optimizer.step()
+            self.critic_optimizer.step()
 
             s = s_next
             a = a_next
