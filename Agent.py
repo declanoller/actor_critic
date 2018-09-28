@@ -359,7 +359,7 @@ class Agent:
         self.agent.initEpisode()
 
         s = self.agent.getStateVec()
-        a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0))))
+        a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)))).to(device)
 
         for i in range(self.params['N_steps']):
             self.params['epsilon'] *= .99
@@ -372,7 +372,7 @@ class Agent:
             R_tot += r
 
             s_next = self.agent.getStateVec()
-            a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s_next,device=self.device),dim=0))))
+            a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s_next,device=self.device),dim=0)))).to(device)
 
             experience = (s,a,r,s_next)
             self.samples_Q.append(experience)
@@ -386,21 +386,21 @@ class Agent:
                 rewards = torch.Tensor([samp[2] for samp in batch_Q_samples],device=self.device)
                 states_next = torch.Tensor([samp[3] for samp in batch_Q_samples],device=self.device)
 
-                Q_cur = self.critic_NN(states)[list(range(len(actions))),actions]
-                actions_next = torch.argmax(self.actor_NN(states_next),dim=1)
-                Q_next = self.target_critic_NN(states_next)[list(range(len(actions_next))),actions_next]
+                Q_cur = (self.critic_NN(states)[list(range(len(actions))),actions]).to(device)
+                actions_next = torch.argmax(self.actor_NN(states_next),dim=1).to(device)
+                Q_next = (self.target_critic_NN(states_next)[list(range(len(actions_next))),actions_next]).to(device)
 
                 #Q_cur = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.Tensor(s),dim=0)))[a]
                 #Q_next = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.Tensor(s_next),dim=0)))[a_next]
 
-                pi = self.actor_NN(states)[list(range(len(actions))),actions]
+                pi = (self.actor_NN(states)[list(range(len(actions))),actions]).to(device)
 
                 if self.params['loss_method'] == 'smoothL1':
-                    TD0_error = F.smooth_l1_loss(Q_cur,(rewards + self.params['gamma']*Q_next).detach())
+                    TD0_error = F.smooth_l1_loss(Q_cur,(rewards + self.params['gamma']*Q_next).detach()).to(device)
                 if self.params['loss_method'] == 'L2':
-                    TD0_error = (rewards + self.params['gamma']*Q_next - Q_cur).pow(2).sum()#.clamp(max=1)
+                    TD0_error = (rewards + self.params['gamma']*Q_next - Q_cur).pow(2).sum().to(device)#.clamp(max=1)
 
-                J = (Q_cur*torch.log(pi)).sum()
+                J = (Q_cur*torch.log(pi)).sum().to(device)
 
                 self.actor_optimizer.zero_grad()
                 self.critic_optimizer.zero_grad()
