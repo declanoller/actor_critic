@@ -3,7 +3,7 @@ from Agent import Agent
 from PuckworldAgent import PuckworldAgent
 
 
-at.varyParam(N_steps=[10**3,10**4,10**5],N_runs=3,show_plot=True,features='AC')
+at.varyParam(N_steps=[10**3,10**4,10**5],N_runs=3,show_plot=False,features='AC')
 
 exit(0)
 #at.multipleEpisodesNewAgent(show_plot=True)

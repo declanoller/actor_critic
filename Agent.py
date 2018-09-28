@@ -292,7 +292,7 @@ class Agent:
         self.agent.initEpisode()
 
         s = self.agent.getStateVec()
-        a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s),dim=0))))
+        a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0))))
 
         for i in range(self.params['N_steps']):
             self.params['epsilon'] *= .99
@@ -302,12 +302,12 @@ class Agent:
             R_tot += r
 
             s_next = self.agent.getStateVec()
-            a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s_next),dim=0))))
+            a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s_next,device=self.device),dim=0))))
 
-            Q_cur = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.Tensor(s),dim=0)))[a]
-            Q_next = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.Tensor(s_next),dim=0)))[a_next]
+            Q_cur = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)))[a]
+            Q_next = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.Tensor(s_next,device=self.device),dim=0)))[a_next]
 
-            pi = torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s),dim=0)))[a]
+            pi = torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)))[a]
 
             if self.params['loss_method'] == 'smoothL1':
                 TD0_error = F.smooth_l1_loss(Q_cur,(r + self.params['gamma']*Q_next).detach())
@@ -359,7 +359,7 @@ class Agent:
         self.agent.initEpisode()
 
         s = self.agent.getStateVec()
-        a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s),dim=0))))
+        a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0))))
 
         for i in range(self.params['N_steps']):
             self.params['epsilon'] *= .99
@@ -372,7 +372,7 @@ class Agent:
             R_tot += r
 
             s_next = self.agent.getStateVec()
-            a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s_next),dim=0))))
+            a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s_next,device=self.device),dim=0))))
 
             experience = (s,a,r,s_next)
             self.samples_Q.append(experience)
@@ -381,10 +381,10 @@ class Agent:
 
                 #Get random batch
                 batch_Q_samples = sample(self.samples_Q,self.params['N_batch'])
-                states = torch.Tensor(np.array([samp[0] for samp in batch_Q_samples]))
+                states = torch.Tensor(np.array([samp[0] for samp in batch_Q_samples]),device=self.device)
                 actions = [samp[1] for samp in batch_Q_samples]
-                rewards = torch.Tensor([samp[2] for samp in batch_Q_samples])
-                states_next = torch.Tensor([samp[3] for samp in batch_Q_samples])
+                rewards = torch.Tensor([samp[2] for samp in batch_Q_samples],device=self.device)
+                states_next = torch.Tensor([samp[3] for samp in batch_Q_samples],device=self.device)
 
                 Q_cur = self.critic_NN(states)[list(range(len(actions))),actions]
                 actions_next = torch.argmax(self.actor_NN(states_next),dim=1)
