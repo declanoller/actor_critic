@@ -78,7 +78,7 @@ class Agent:
             torch.set_default_tensor_type(torch.cuda.DoubleTensor)
 
         torch.cuda.set_device(0)
-        
+
         print('current cuda device:',torch.cuda.current_device())
         #torch.cuda.device()
         #exit(0)
@@ -370,7 +370,7 @@ class Agent:
         print('\n\n\ndebug:')
         print('device:',self.device)
         print('type s:',type(s))
-        print('info torch.Tensor(s,device=self.device):',type(torch.Tensor(s,device=self.device)),torch.Tensor(s,device=self.device).device,torch.Tensor(s,device=self.device).dtype)
+        print('info torch.Tensor(s,device=self.device):',type(torch.tensor(s,device=self.device)),torch.tensor(s,device=self.device).device,torch.tensor(s,device=self.device).dtype)
         print('info torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0):',type(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)),torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0).device,torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0).dtype)
         exit(0)
 
