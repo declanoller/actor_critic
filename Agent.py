@@ -366,6 +366,7 @@ class Agent:
         s = self.agent.getStateVec()
 
         print('\n\n\ndebug:')
+        print('device:',self.device)
         print('type s:',type(s))
         print('info torch.Tensor(s,device=self.device):',type(torch.Tensor(s,device=self.device)),torch.Tensor(s,device=self.device).device,torch.Tensor(s,device=self.device).dtype)
         print('info torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0):',type(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)),torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0).device,torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0).dtype)
