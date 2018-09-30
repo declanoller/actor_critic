@@ -77,7 +77,9 @@ class Agent:
         if self.device == 'cuda':
             torch.set_default_tensor_type(torch.cuda.DoubleTensor)
 
-
+        print('current cuda device:',torch.cuda.current_device())
+        #torch.cuda.device()
+        exit(0)
         if self.features == 'linear':
 
             self.fv_shape = self.agent.getFeatureVec(self.agent.getStateVec(),0).shape
