@@ -364,6 +364,13 @@ class Agent:
         self.agent.initEpisode()
 
         s = self.agent.getStateVec()
+
+        print('\n\n\ndebug:')
+        print('type s:',type(s))
+        print('type torch.Tensor(s,device=self.device):',type(torch.Tensor(s,device=self.device)))
+        print('type torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0):',type(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)))
+        exit(0)
+
         a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)))).to(self.device)
 
         for i in range(self.params['N_steps']):
