@@ -367,14 +367,14 @@ class Agent:
 
         s = self.agent.getStateVec()
 
-        print('\n\n\ndebug:')
+        '''print('\n\n\ndebug:')
         print('device:',self.device)
         print('type s:',type(s))
         print('info torch.Tensor(s,device=self.device):',type(torch.tensor(s,device=self.device)),torch.tensor(s,device=self.device).device,torch.tensor(s,device=self.device).dtype)
         print('info torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0):',type(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)),torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0).device,torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0).dtype)
-        exit(0)
+        '''#exit(0)
 
-        a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)))).to(self.device)
+        a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.tensor(s,device=self.device),dim=0)))).to(self.device)
 
         for i in range(self.params['N_steps']):
             self.params['epsilon'] *= .99
@@ -387,7 +387,7 @@ class Agent:
             R_tot += r
 
             s_next = self.agent.getStateVec()
-            a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s_next,device=self.device),dim=0)))).to(self.device)
+            a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.tensor(s_next,device=self.device),dim=0)))).to(self.device)
 
             experience = (s,a,r,s_next)
             self.samples_Q.append(experience)
@@ -396,17 +396,17 @@ class Agent:
 
                 #Get random batch
                 batch_Q_samples = sample(self.samples_Q,self.params['N_batch'])
-                states = torch.Tensor(np.array([samp[0] for samp in batch_Q_samples]),device=self.device)
+                states = torch.tensor(np.array([samp[0] for samp in batch_Q_samples]),device=self.device)
                 actions = [samp[1] for samp in batch_Q_samples]
-                rewards = torch.Tensor([samp[2] for samp in batch_Q_samples],device=self.device)
-                states_next = torch.Tensor([samp[3] for samp in batch_Q_samples],device=self.device)
+                rewards = torch.tensor([samp[2] for samp in batch_Q_samples],device=self.device)
+                states_next = torch.tensor([samp[3] for samp in batch_Q_samples],device=self.device)
 
                 Q_cur = (self.critic_NN(states)[list(range(len(actions))),actions]).to(self.device)
                 actions_next = torch.argmax(self.actor_NN(states_next),dim=1).to(self.device)
                 Q_next = (self.target_critic_NN(states_next)[list(range(len(actions_next))),actions_next]).to(self.device)
 
-                #Q_cur = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.Tensor(s),dim=0)))[a]
-                #Q_next = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.Tensor(s_next),dim=0)))[a_next]
+                #Q_cur = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.tensor(s),dim=0)))[a]
+                #Q_next = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.tensor(s_next),dim=0)))[a_next]
 
                 pi = (self.actor_NN(states)[list(range(len(actions))),actions]).to(self.device)
 
