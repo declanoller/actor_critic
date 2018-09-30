@@ -367,8 +367,8 @@ class Agent:
 
         print('\n\n\ndebug:')
         print('type s:',type(s))
-        print('type torch.Tensor(s,device=self.device):',type(torch.Tensor(s,device=self.device)))
-        print('type torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0):',type(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)))
+        print('info torch.Tensor(s,device=self.device):',type(torch.Tensor(s,device=self.device)),torch.Tensor(s,device=self.device).device,torch.Tensor(s,device=self.device).dtype)
+        print('info torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0):',type(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)),torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0).device,torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0).dtype)
         exit(0)
 
         a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)))).to(self.device)
