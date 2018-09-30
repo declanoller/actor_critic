@@ -78,7 +78,7 @@ class Agent:
             torch.set_default_tensor_type(torch.cuda.DoubleTensor)
 
         torch.cuda.set_device(0)
-        self.device = torch.cuda.device(0)
+        
         print('current cuda device:',torch.cuda.current_device())
         #torch.cuda.device()
         #exit(0)
