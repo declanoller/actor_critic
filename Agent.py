@@ -374,7 +374,7 @@ class Agent:
         print('info torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0):',type(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)),torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0).device,torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0).dtype)
         '''#exit(0)
 
-        a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.tensor(s,device=self.device),dim=0)))).to(self.device)
+        a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.tensor(s,device=self.device),dim=0))))
 
         for i in range(self.params['N_steps']):
             self.params['epsilon'] *= .99
@@ -387,7 +387,7 @@ class Agent:
             R_tot += r
 
             s_next = self.agent.getStateVec()
-            a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.tensor(s_next,device=self.device),dim=0)))).to(self.device)
+            a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.tensor(s_next,device=self.device),dim=0))))
 
             experience = (s,a,r,s_next)
             self.samples_Q.append(experience)
@@ -401,21 +401,21 @@ class Agent:
                 rewards = torch.tensor([samp[2] for samp in batch_Q_samples],device=self.device)
                 states_next = torch.tensor([samp[3] for samp in batch_Q_samples],device=self.device)
 
-                Q_cur = (self.critic_NN(states)[list(range(len(actions))),actions]).to(self.device)
-                actions_next = torch.argmax(self.actor_NN(states_next),dim=1).to(self.device)
-                Q_next = (self.target_critic_NN(states_next)[list(range(len(actions_next))),actions_next]).to(self.device)
+                Q_cur = (self.critic_NN(states)[list(range(len(actions))),actions])
+                actions_next = torch.argmax(self.actor_NN(states_next),dim=1)
+                Q_next = (self.target_critic_NN(states_next)[list(range(len(actions_next))),actions_next])
 
                 #Q_cur = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.tensor(s),dim=0)))[a]
                 #Q_next = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.tensor(s_next),dim=0)))[a_next]
 
-                pi = (self.actor_NN(states)[list(range(len(actions))),actions]).to(self.device)
+                pi = (self.actor_NN(states)[list(range(len(actions))),actions])
 
                 if self.params['loss_method'] == 'smoothL1':
-                    TD0_error = F.smooth_l1_loss(Q_cur,(rewards + self.params['gamma']*Q_next).detach()).to(self.device)
+                    TD0_error = F.smooth_l1_loss(Q_cur,(rewards + self.params['gamma']*Q_next).detach())
                 if self.params['loss_method'] == 'L2':
-                    TD0_error = (rewards + self.params['gamma']*Q_next - Q_cur).pow(2).sum().to(self.device)#.clamp(max=1)
+                    TD0_error = (rewards + self.params['gamma']*Q_next - Q_cur).pow(2).sum()#.clamp(max=1)
 
-                J = (Q_cur*torch.log(pi)).sum().to(self.device)
+                J = (Q_cur*torch.log(pi)).sum()
 
                 self.actor_optimizer.zero_grad()
                 self.critic_optimizer.zero_grad()
