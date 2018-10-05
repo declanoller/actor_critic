@@ -9,19 +9,22 @@ class PuckworldAgent:
 
     def __init__(self,**kwargs):
 
-        (self.xlim,self.ylim) = (1.0,1.0)
-        self.lims = np.array((self.xlim,self.ylim))
-        self.max_dist = sqrt(np.sum(self.lims**2))
-        self.a = 0.2
+        self.xlims = np.array([-0.5,0.5])
+        self.ylims = np.array([-0.5,0.5])
+        self.lims = np.array((self.xlims,self.ylims))
+        self.max_dist = sqrt(np.ptp(self.xlims)**2 + np.ptp(self.ylims)**2)
+        self.a = 0.5
+        self.drag = 0.5
         self.time_step = kwargs.get('dt',10**-1)
 
         self.N_actions = 4
 
 
-        self.circ_rad = self.xlim/20.0
+        self.circ_rad = np.ptp(self.xlims)/20.0
+        self.target_rad = 2.5*self.circ_rad
         self.resetTarget()
 
-        self.pos0 = np.array([self.xlim/2.0,self.ylim/2.0])
+        self.pos0 = np.array([self.xlims.mean()/2.0,self.ylims.mean()/2.0])
         self.v0 = np.array([0.0,0.0])
         self.resetStateValues()
         self.accel_array = np.array([[0,1],[0,-1],[-1,0],[1,0]])
@@ -41,7 +44,7 @@ class PuckworldAgent:
 
     def resetTarget(self):
 
-        self.target = self.circ_rad + np.random.random((2,))*(1-2*self.circ_rad)
+        self.target = self.target_rad + self.lims[:,0] + np.random.random((2,))*(np.ptp(self.lims,axis=1)-2*self.target_rad)
 
 
     def iterateEuler(self,action):
@@ -52,19 +55,19 @@ class PuckworldAgent:
         #boundary, but it might be cool to make periodic bry conds, to see if it would
         #learn to zoom around it.
 
-        a = self.actionToAccel(action) - .3*self.v
+        a = self.actionToAccel(action) - self.drag*self.v
 
         v_next = self.v + a*self.time_step
         pos_next = self.pos + v_next*self.time_step
 
         #To handle the walls
         for i in [0,1]:
-            if pos_next[i] < (0 + self.circ_rad):
-                pos_next[i] = 0 + self.circ_rad
+            if pos_next[i] < (self.lims[i,0] + self.circ_rad):
+                pos_next[i] = self.lims[i,0] + self.circ_rad
                 v_next[i] = -v_next[i]
 
-            if pos_next[i] > (self.lims[i] - self.circ_rad):
-                pos_next[i] = self.lims[i] - self.circ_rad
+            if pos_next[i] > (self.lims[i,1] - self.circ_rad):
+                pos_next[i] = self.lims[i,1] - self.circ_rad
                 v_next[i] = -v_next[i]
 
         self.pos = pos_next
@@ -100,11 +103,15 @@ class PuckworldAgent:
 
         assert self.target is not None, 'Need a target'
         #Currently just gonna do a limited inverse from the pos of the target.
-        max_R = 10
+        max_R = 1
         #return(max_R*(.5*self.max_dist-self.puckTargetDist()) - 1)
         #return(1/(1/max_R + sqrt(np.sum((self.pos-self.target)**2)) ) )
         #return(1.0/(self.puckTargetDist()**2 + 1/max_R))
-        return(-max_R*self.puckTargetDist())
+        #return(-max_R*self.puckTargetDist())
+        if self.puckTargetDist() <= (self.target_rad + self.circ_rad):
+            return(max_R)
+        else:
+            return(-0.01)
 
 
     def puckTargetDist(self):
@@ -136,8 +143,8 @@ class PuckworldAgent:
     def drawState(self,ax):
 
         ax.clear()
-        ax.set_xlim((0,self.xlim))
-        ax.set_ylim((0,self.ylim))
+        ax.set_xlim(tuple(self.xlims))
+        ax.set_ylim(tuple(self.ylims))
 
         ax.set_xlabel('x')
         ax.set_ylabel('y')
@@ -147,7 +154,7 @@ class PuckworldAgent:
         ax.add_artist(puck)
 
         if self.target is not None:
-            target = plt.Circle(tuple(self.target), self.circ_rad, color='seagreen')
+            target = plt.Circle(tuple(self.target), self.target_rad, color='seagreen')
             ax.add_artist(target)
 
 
@@ -156,22 +163,27 @@ class PuckworldAgent:
         ax1 = axes[0]
         ax2 = axes[1]
         ax3 = axes[2]
+        ax4 = axes[3]
 
         ax1.clear()
-        ax1.plot(self.pos_hist[:,0],label='x')
-        ax1.plot(self.pos_hist[:,1],label='y')
+        ax1.plot(self.pos_hist[:,0][-1000:],label='x')
+        ax1.plot(self.pos_hist[:,1][-1000:],label='y')
         ax1.legend()
 
         ax2.clear()
-        ax2.plot(self.r_hist,label='R')
+        ax2.plot(self.r_hist[-1000:],label='R')
         ax2.legend()
 
 
         ax3.clear()
-        ax3.plot(self.a_hist,label='a')
+        ax3.plot(self.a_hist[-1000:],label='a')
+        ax3.set_yticklabels(['U','D','L','R'])
         ax3.legend()
 
-
+        ax4.clear()
+        ax4.plot(self.v_hist[:,0][-1000:],label='vx')
+        ax4.plot(self.v_hist[:,1][-1000:],label='vy')
+        ax4.legend()
 
 
 

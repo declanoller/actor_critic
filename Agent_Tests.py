@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from statistics import mean,stdev
 import FileSystemTools as fst
 from time import time
+import numpy as np
 
 
 def multipleEpisodesNewAgent(**kwargs):
@@ -52,7 +53,8 @@ def varyParam(**kwargs):
     label = 'vary_' + fst.listToFname(vary_params) + '_' + notes
     dir = fst.makeLabelDateDir(label)
     ext = '.png'
-    fname = fst.combineDirAndFile(dir,label + date_time + ext)
+    base_name = fst.combineDirAndFile(dir,label + date_time)
+    fname = base_name + ext
 
     R_tots = []
     SD = []
@@ -73,7 +75,7 @@ def varyParam(**kwargs):
 
 
     plt.close('all')
-    fig,axes = plt.subplots(1,1,figsize=(6,6))
+    fig,axes = plt.subplots(1,1,figsize=(6,9))
 
     if N_runs>1:
         plt.errorbar(list(range(len(R_tots))),R_tots,yerr=SD,fmt='ro-')
@@ -81,10 +83,25 @@ def varyParam(**kwargs):
         plt.plot(R_tots,'ro-')
 
     axes.set_xticks(list(range(len(R_tots))))
-    axes.set_xticklabels([str(param) for param in vary_param_tups])
+    labels = ['\n'.join(['{}={}'.format(k,v) for k,v in param.items()]) for param in vary_param_tups]
+    axes.set_xticklabels(labels, rotation='vertical')
     axes.set_ylabel('Total reward')
-
+    plt.tight_layout()
     plt.savefig(fname)
+
+    if N_runs == 1:
+        f = open(base_name + '_values.txt','w+')
+        for label, val in zip(labels,R_tots):
+            f.write('{}\t{}\n'.format(label.replace('\n',','),val))
+        f.close()
+    else:
+        f = open(base_name + '_values.txt','w+')
+        for label, val, sd in zip(labels,R_tots,SD):
+            f.write('{}\t{}\t{}\n'.format(label.replace('\n',','),val,sd))
+        f.close()
+
+
+
     print('\n\ntook {} to execute'.format(fst.getTimeDiffStr(st)))
     if show_plot:
         plt.show()

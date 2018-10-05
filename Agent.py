@@ -8,8 +8,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import FileSystemTools as fst
+from collections import namedtuple
+from matplotlib.colors import LinearSegmentedColormap
 
 
+Experience = namedtuple('exp_tup',('s','a','r','s_next'))
 
 
 class DQN(nn.Module):
@@ -43,56 +46,68 @@ class Agent:
         self.params['alpha'] = kwargs.get('alpha',10**-1)
         self.params['beta'] = kwargs.get('beta',None)
         self.params['epsilon'] = kwargs.get('epsilon',0.8)
+        self.params['epsilon_decay'] = kwargs.get('epsilon_decay',0.99)
 
         self.params['N_steps'] = kwargs.get('N_steps',10**3)
         self.params['N_batch'] = kwargs.get('N_batch',20)
         self.params['N_hidden_layer_nodes'] = kwargs.get('N_hidden_layer_nodes',100)
+        self.params['target_update'] = kwargs.get('target_update',12)
+        self.params['double_DQN'] = kwargs.get('double_DQN',False)
+        self.params['exp_buf_len'] = kwargs.get('exp_buf_len',10000)
 
         self.features = kwargs.get('features','DQN')
         self.params['NL_fn'] = kwargs.get('NL_fn','tanh')
-        self.params['loss_method'] = kwargs.get('loss','smoothL1')
+        self.params['loss_method'] = kwargs.get('loss_method','smoothL1')
         self.params['clamp_grad'] = kwargs.get('clamp_grad',True)
 
-        self.dir = kwargs.get('dir','.')
+        self.dir = kwargs.get('dir','misc_runs')
         self.date_time = kwargs.get('date_time',fst.getDateString())
-        self.base_fname = fst.paramDictToFnameStr(self.params) + '_' + self.date_time + '.png'
-        self.fname = fst.combineDirAndFile(self.dir,self.base_fname)
+        self.base_fname = fst.paramDictToFnameStr(self.params) + '_' + self.date_time
+        self.img_fname = fst.combineDirAndFile(self.dir, self.base_fname + '.png')
+        self.log_fname = fst.combineDirAndFile(self.dir, 'log_' + self.base_fname + '.txt')
+        self.model_fname = fst.combineDirAndFile(self.dir, 'model_' + self.base_fname + '.model')
+
+
+        self.R_tot_hist = []
 
 
         self.initLearningParams()
 
         self.createFigure()
 
+        fst.writeDictToFile(self.params,self.log_fname)
+
+
+
 
     def initLearningParams(self):
 
-        self.dtype = torch.float64
+
+        self.exp_pos = 0
+
         #self.device = torch.device("cpu")
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print('\nusing device:',self.device)
 
+        self.dtype = torch.float32
         torch.set_default_dtype(self.dtype)
-        if self.device == 'cpu':
-            torch.set_default_tensor_type(torch.DoubleTensor)
-        if self.device == 'cuda':
-            torch.set_default_tensor_type(torch.cuda.DoubleTensor)
 
-        torch.cuda.set_device(0)
+        if str(self.device) == 'cpu':
+            torch.set_default_tensor_type(torch.FloatTensor)
+        if str(self.device) == 'cuda':
+            torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
-        print('current cuda device:',torch.cuda.current_device())
-        #torch.cuda.device()
-        #exit(0)
         if self.features == 'linear':
-
             self.fv_shape = self.agent.getFeatureVec(self.agent.getStateVec(),0).shape
-
             #init_smallnum = 0.01
             self.w_Q = torch.zeros(self.fv_shape, device=self.device, dtype=self.dtype, requires_grad=False)
             self.theta_pi = torch.zeros(self.fv_shape, device=self.device, dtype=self.dtype, requires_grad=True)
-            '''self.w_Q = torch.randn(self.fv_shape, device=self.device, dtype=self.dtype, requires_grad=False)
-            self.theta_pi = torch.randn(self.fv_shape, device=self.device, dtype=self.dtype, requires_grad=True)'''
+
+
 
         if self.features == 'DQN':
+            #This is using a "target" Q network and a "policy" Q network, with
+            #experience replay.
 
             D_in, H, D_out = self.agent.N_state_terms, self.params['N_hidden_layer_nodes'], self.agent.N_actions
             if self.params['NL_fn'] == 'tanh':
@@ -104,12 +119,19 @@ class Agent:
 
             self.policy_NN = DQN(D_in,H,D_out,NL_fn=NL_fn)
             self.target_NN = DQN(D_in,H,D_out,NL_fn=NL_fn)
+
+            if str(self.device) == 'cuda':
+                self.policy_NN.cuda()
+                self.target_NN.cuda()
+
             self.target_NN.load_state_dict(self.policy_NN.state_dict())
             self.target_NN.eval()
             self.optimizer = optim.RMSprop(self.policy_NN.parameters())
             self.samples_Q = []
 
-            self.episode = self.DQNERepisode
+            self.episode = self.DQNepisode
+
+
 
         if self.features == 'AC':
 
@@ -122,9 +144,15 @@ class Agent:
                 NL_fn = F.sigmoid
 
             #The "actor" is the policy network, the "critic" is the Q network.
-            self.actor_NN = DQN(D_in,H,D_out,NL_fn=NL_fn).cuda()
-            self.critic_NN = DQN(D_in,H,D_out,NL_fn=NL_fn).cuda()
-            self.target_critic_NN = DQN(D_in,H,D_out,NL_fn=NL_fn).cuda()
+            self.actor_NN = DQN(D_in,H,D_out,NL_fn=NL_fn)
+            self.critic_NN = DQN(D_in,H,D_out,NL_fn=NL_fn)
+            self.target_critic_NN = DQN(D_in,H,D_out,NL_fn=NL_fn)
+
+            if str(self.device) == 'cuda':
+                self.actor_NN.cuda()
+                self.critic_NN.cuda()
+                self.target_critic_NN.cuda()
+
             self.target_critic_NN.load_state_dict(self.critic_NN.state_dict())
             self.target_critic_NN.eval()
             self.actor_optimizer = optim.RMSprop(self.actor_NN.parameters())
@@ -141,8 +169,20 @@ class Agent:
             self.target_critic_NN.load_state_dict(self.critic_NN.state_dict())
 
 
+    def updateEpsilon(self):
+        self.params['epsilon'] *= self.params['epsilon_decay']
+
+
     def resetStateValues(self):
         self.agent.resetStateValues()
+
+
+    def getStateVec(self):
+        return(torch.tensor(self.agent.getStateVec(),device=self.device,dtype=self.dtype))
+
+
+    def getReward(self):
+        return(torch.tensor(self.agent.reward(),device=self.device,dtype=self.dtype))
 
 
     def softmaxAction(self,state_vec):
@@ -218,45 +258,72 @@ class Agent:
         return(randint(0,self.agent.N_actions-1))
 
 
-    def DQNERepisode(self,show_plot=True,save_plot=False):
+    def addExperience(self,experience):
+        if len(self.samples_Q) < self.params['exp_buf_len']:
+            self.samples_Q.append(None)
+        self.samples_Q[self.exp_pos] = experience
+        self.exp_pos = (self.exp_pos + 1) % self.params['exp_buf_len']
 
-        R_tot = 0
+
+    def DQNepisode(self,show_plot=True,save_plot=False):
+
+        self.R_tot = 0
+
+        '''print('\n\nbefore run:')
+        print(self.forwardPassQ(torch.tensor([.3,.3,0,0,0,0],device=self.device,dtype=self.dtype)))
+        print(self.epsGreedyAction(torch.tensor([.3,.3,0,0,0,0],device=self.device,dtype=self.dtype)))'''
 
         if show_plot:
             self.showFig()
 
         self.agent.initEpisode()
 
-        s = self.agent.getStateVec()
+        s = self.getStateVec()
         a = self.epsGreedyAction(s)
 
         for i in range(self.params['N_steps']):
-            self.params['epsilon'] *= .99
 
-            if i%11==0 and i>self.params['N_batch']:
+            if i%int(self.params['N_steps']/10) == 0:
+                print('iteration ',i)
+
+            self.updateEpsilon()
+
+            if i%self.params['target_update']==0 and i>self.params['N_batch']:
                 self.updateFrozenQ()
 
             self.agent.iterate(a)
-            r = self.agent.reward()
-            R_tot += r
+            r = self.getReward()
+            self.R_tot += r.item()
+            self.R_tot_hist.append(self.R_tot/(i+1))
 
-            s_next = self.agent.getStateVec()
+            if r.item() > 0:
+                self.agent.resetTarget()
+
+
+            s_next = self.getStateVec()
             a_next = self.epsGreedyAction(s_next)
 
-            experience = (s,a,r,s_next)
-            self.samples_Q.append(experience)
+            self.addExperience(Experience(s,a,r,s_next))
 
             if len(self.samples_Q)>=2*self.params['N_batch']:
 
                 #Get random batch
                 batch_Q_samples = sample(self.samples_Q,self.params['N_batch'])
-                states = torch.Tensor(np.array([samp[0] for samp in batch_Q_samples]))
-                actions = [samp[1] for samp in batch_Q_samples]
-                rewards = torch.Tensor([samp[2] for samp in batch_Q_samples])
-                states_next = torch.Tensor([samp[3] for samp in batch_Q_samples])
+                experiences = Experience(*zip(*batch_Q_samples))
+
+                states = torch.stack(experiences.s)
+                actions = experiences.a
+                rewards = torch.stack(experiences.r)
+                states_next = torch.stack(experiences.s_next)
 
                 Q_cur = self.forwardPassQ(states)[list(range(len(actions))),actions]
-                Q_next = torch.max(self.forwardPassQFrozen(states_next),dim=1)[0]
+
+                if self.params['double_DQN']:
+                    actions_next = torch.argmax(self.forwardPassQ(states_next),dim=1)
+                    Q_next = self.forwardPassQFrozen(states_next)[list(range(len(actions_next))),actions_next]
+                else:
+                    Q_next = torch.max(self.forwardPassQFrozen(states_next),dim=1)[0]
+
 
                 if self.params['loss_method'] == 'smoothL1':
                     TD0_error = F.smooth_l1_loss(Q_cur,(rewards + self.params['gamma']*Q_next).detach())
@@ -280,35 +347,40 @@ class Agent:
 
         if save_plot:
             self.plotAll()
-            plt.savefig(self.fname)
+            plt.savefig(self.img_fname)
 
         plt.close('all')
 
-        print('puck-target dist: {:.2f}, R_tot/N_steps: {:.2f}'.format(self.agent.puckTargetDist(),R_tot/self.params['N_steps']))
-        return(R_tot/self.params['N_steps'])
+        '''print('\n\nafter run: ')
+        print(self.forwardPassQ(torch.tensor([.3,.3,0,0,0,0],device=self.device,dtype=self.dtype)))
+        print(self.epsGreedyAction(torch.tensor([.3,.3,0,0,0,0],device=self.device,dtype=self.dtype)))'''
+        self.saveModel()
+
+        print('puck-target dist: {:.2f}, self.R_tot/N_steps: {:.2f}'.format(self.agent.puckTargetDist(),self.R_tot/self.params['N_steps']))
+        return(self.R_tot/self.params['N_steps'])
 
 
 
     def ACepisode(self,show_plot=True,save_plot=False):
 
-        R_tot = 0
+        self.R_tot = 0
 
         if show_plot:
             self.showFig()
 
         self.agent.initEpisode()
 
-        s = self.agent.getStateVec()
+        s = self.getStateVec()
         a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0))))
 
         for i in range(self.params['N_steps']):
-            self.params['epsilon'] *= .99
+            self.updateEpsilon()
 
             self.agent.iterate(a)
-            r = self.agent.reward()
-            R_tot += r
+            r = self.getReward()
+            self.R_tot += r
 
-            s_next = self.agent.getStateVec()
+            s_next = self.getStateVec()
             a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.Tensor(s_next,device=self.device),dim=0))))
 
             Q_cur = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)))[a]
@@ -347,66 +419,57 @@ class Agent:
 
         if save_plot:
             self.plotAll()
-            plt.savefig(self.fname)
+            plt.savefig(self.img_fname)
 
         plt.close('all')
 
-        print('puck-target dist: {:.2f}, R_tot/N_steps: {:.2f}'.format(self.agent.puckTargetDist(),R_tot/self.params['N_steps']))
-        return(R_tot/self.params['N_steps'])
+        print('puck-target dist: {:.2f}, self.R_tot/N_steps: {:.2f}'.format(self.agent.puckTargetDist(),self.R_tot/self.params['N_steps']))
+        return(self.R_tot/self.params['N_steps'])
 
 
 
     def ACERepisode(self,show_plot=True,save_plot=False):
 
-        R_tot = 0
+        self.R_tot = 0
 
         if show_plot:
             self.showFig()
 
         self.agent.initEpisode()
 
-        s = self.agent.getStateVec()
-
-        '''print('\n\n\ndebug:')
-        print('device:',self.device)
-        print('type s:',type(s))
-        print('info torch.Tensor(s,device=self.device):',type(torch.tensor(s,device=self.device)),torch.tensor(s,device=self.device).device,torch.tensor(s,device=self.device).dtype)
-        print('info torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0):',type(torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0)),torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0).device,torch.unsqueeze(torch.Tensor(s,device=self.device),dim=0).dtype)
-        '''#exit(0)
-
-        a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.tensor(s,device=self.device),dim=0))))
+        s = self.getStateVec()
+        a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.tensor(s,device=self.device,dtype=self.dtype),dim=0))))
 
         for i in range(self.params['N_steps']):
-            self.params['epsilon'] *= .99
+            self.updateEpsilon()
 
-            if i%11==0 and i>self.params['N_batch']:
+            if i%self.params['target_update']==0 and i>self.params['N_batch']:
                 self.updateFrozenQ()
 
             self.agent.iterate(a)
-            r = self.agent.reward()
-            R_tot += r
+            r = self.getReward()
+            self.R_tot += r.item()
 
-            s_next = self.agent.getStateVec()
-            a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.tensor(s_next,device=self.device),dim=0))))
+            s_next = self.getStateVec()
+            a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.tensor(s_next,device=self.device,dtype=self.dtype),dim=0))))
 
-            experience = (s,a,r,s_next)
-            self.samples_Q.append(experience)
+            self.addExperience(Experience(s,a,r,s_next))
 
             if len(self.samples_Q)>=2*self.params['N_batch']:
 
                 #Get random batch
                 batch_Q_samples = sample(self.samples_Q,self.params['N_batch'])
-                states = torch.tensor(np.array([samp[0] for samp in batch_Q_samples]),device=self.device)
-                actions = [samp[1] for samp in batch_Q_samples]
-                rewards = torch.tensor([samp[2] for samp in batch_Q_samples],device=self.device)
-                states_next = torch.tensor([samp[3] for samp in batch_Q_samples],device=self.device)
+                experiences = Experience(*zip(*batch_Q_samples))
+
+                states = torch.stack(experiences.s)
+                actions = experiences.a
+                rewards = torch.stack(experiences.r)
+                states_next = torch.stack(experiences.s_next)
 
                 Q_cur = (self.critic_NN(states)[list(range(len(actions))),actions])
                 actions_next = torch.argmax(self.actor_NN(states_next),dim=1)
-                Q_next = (self.target_critic_NN(states_next)[list(range(len(actions_next))),actions_next])
-
-                #Q_cur = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.tensor(s),dim=0)))[a]
-                #Q_next = torch.squeeze(self.critic_NN(torch.unsqueeze(torch.tensor(s_next),dim=0)))[a_next]
+                #Q_next = (self.target_critic_NN(states_next)[list(range(len(actions_next))),actions_next])
+                Q_next = (self.critic_NN(states_next)[list(range(len(actions_next))),actions_next])
 
                 pi = (self.actor_NN(states)[list(range(len(actions))),actions])
 
@@ -441,19 +504,80 @@ class Agent:
 
         if save_plot:
             self.plotAll()
-            plt.savefig(self.fname)
+            plt.savefig(self.img_fname)
 
         plt.close('all')
 
-        print('puck-target dist: {:.2f}, R_tot/N_steps: {:.2f}'.format(self.agent.puckTargetDist(),R_tot/self.params['N_steps']))
-        return(R_tot/self.params['N_steps'])
+        print('puck-target dist: {:.2f}, self.R_tot/N_steps: {:.2f}'.format(self.agent.puckTargetDist(),self.R_tot/self.params['N_steps']))
+        return(self.R_tot/self.params['N_steps'])
 
+
+
+
+    def loadModelPlay(self,model_fname,show_plot=True,save_plot=False):
+
+        self.policy_NN.load_state_dict(torch.load(model_fname))
+        #self.policy_NN.eval()
+        '''print('\n\nbefore run:')
+        print(self.singleStateForwardPassQ(torch.tensor([.3,.3,0,0,0,0],device=self.device,dtype=self.dtype)))
+        print(self.epsGreedyAction(torch.tensor([.3,.3,0,0,0,0],device=self.device,dtype=self.dtype)))'''
+        self.updateFrozenQ()
+
+        #print(self.policy_NN.state_dict())
+
+        #self.params['epsilon'] = 0
+        self.R_tot = 0
+
+        if show_plot:
+            self.showFig()
+
+        self.agent.initEpisode()
+
+
+        for i in range(self.params['N_steps']):
+
+            if i%int(self.params['N_steps']/10) == 0:
+                print('iteration ',i)
+
+
+            self.updateEpsilon()
+
+
+            s = self.getStateVec()
+            a = self.epsGreedyAction(s)
+            #print('state: {}\t actions: {}\t max action: {}'.format(s,self.singleStateForwardPassQ(s),a))
+            self.agent.iterate(a)
+            r = self.getReward()
+            self.R_tot += r.item()
+            self.R_tot_hist.append(self.R_tot/(i+1))
+
+            if r.item() > 0:
+                self.agent.resetTarget()
+
+            if show_plot:
+                self.plotAll()
+                self.fig.canvas.draw()
+
+        if save_plot:
+            self.plotAll()
+            plt.savefig(self.img_fname)
+
+        plt.close('all')
+
+        print('\n\n after run:')
+        print(self.forwardPassQ(torch.tensor([.3,.3,0,0,0,0],device=self.device,dtype=self.dtype)))
+        print(self.epsGreedyAction(torch.tensor([.3,.3,0,0,0,0],device=self.device,dtype=self.dtype)))
+
+        print('puck-target dist: {:.2f}, self.R_tot/N_steps: {:.2f}'.format(self.agent.puckTargetDist(),self.R_tot/self.params['N_steps']))
+        return(self.R_tot/self.params['N_steps'])
 
 
 
     def plotAll(self):
         self.drawState()
         self.plotStateParams()
+        self.plotRtot()
+        self.plotWeights()
         #self.plotWeights()
 
 
@@ -462,23 +586,89 @@ class Agent:
 
 
     def plotWeights(self):
-        self.ax_wQ.clear()
-        #print(self.w_Q.view(1,-1).numpy())
-        #self.ax_wQ.plot(self.w_Q.view(1,-1).numpy().flatten(),label='w_Q weights')
-        for i in range(self.w_Q.shape[0]):
-            self.ax_wQ.plot(self.w_Q.detach().numpy()[i,:],label='w_Q '+str(i))
-        self.ax_wQ.legend()
 
-        self.ax_theta_pi.clear()
-        #print(self.w_Q.view(1,-1).numpy())
-        #self.ax_theta_pi.plot(self.theta_pi.view(1,-1).detach().numpy().flatten(),label='theta_pi weights')
-        '''for i in range(self.theta_pi.shape[0]):
-            self.ax_theta_pi.plot(self.theta_pi.detach().numpy()[i,:],label='theta_pi '+str(i))
-        self.ax_theta_pi.legend()'''
+        sv = self.getStateVec().detach().numpy().tolist()
+        target_pos = sv[4:]
 
+        if (target_pos != self.last_target_pos) or (self.last_target_pos is None):
+
+            self.ax_wQ.clear()
+            self.last_target_pos = target_pos
+            N_disc = 50
+            lims = self.agent.xlims
+            pos = np.array([[[x,y] for y in np.linspace(lims[0],lims[1],N_disc)] for x in np.linspace(lims[0],lims[1],N_disc)])
+            v = np.expand_dims(np.full((N_disc,N_disc),0),axis=2)
+            sv = self.getStateVec()
+            xt = np.expand_dims(np.full((N_disc,N_disc),sv[4]),axis=2)
+            yt = np.expand_dims(np.full((N_disc,N_disc),sv[5]),axis=2)
+
+            states = np.concatenate((pos,v,v,xt,yt),axis=2)
+
+            states = torch.tensor(states,dtype=self.dtype)
+            output = self.forwardPassQ(states)
+
+            best_actions = (torch.argmax(output,dim=2)).detach().numpy()
+            #best_actions = (torch.max(output,dim=2)[0]).detach().numpy()
+
+            if self.col_bar is not None:
+                self.col_bar.remove()
+
+            col_plot = self.ax_wQ.matshow(best_actions.T,cmap=self.cm,origin='lower')
+            #col_plot = self.ax_wQ.matshow(best_actions,cmap='Reds',origin='lower')
+            self.ax_wQ.set_xlabel('x')
+            self.ax_wQ.set_ylabel('y')
+            self.col_bar = self.fig.colorbar(col_plot,ax=self.ax_wQ, ticks=[0,1,2,3], boundaries=np.arange(-.5,4.5,1))
+            self.col_bar.ax.set_yticklabels(['U','D','L','R'])
+            xt = sv[4]
+            yt = sv[5]
+
+            target = plt.Circle(((xt-lims[0])*N_disc,(yt-lims[0])*N_disc), 2.5*N_disc/20.0, color='black')
+            self.ax_wQ.add_artist(target)
+
+
+
+
+
+            self.ax_wQ2.clear()
+            self.last_target_pos = target_pos
+            N_disc = 40
+            lims = self.agent.xlims
+            pos = np.array([[[x,y] for y in np.linspace(lims[0],lims[1],N_disc)] for x in np.linspace(lims[0],lims[1],N_disc)])
+            v = np.expand_dims(np.full((N_disc,N_disc),0),axis=2)
+            sv = self.getStateVec()
+            xt = np.expand_dims(np.full((N_disc,N_disc),sv[4]),axis=2)
+            yt = np.expand_dims(np.full((N_disc,N_disc),sv[5]),axis=2)
+
+            states = np.concatenate((pos,v,v,xt,yt),axis=2)
+
+            states = torch.tensor(states,dtype=self.dtype)
+            output = self.forwardPassQ(states)
+
+            #best_actions = (torch.argmax(output,dim=2)).detach().numpy()
+            max_Q = (torch.max(output,dim=2)[0]).detach().numpy()
+
+            if self.col_bar2 is not None:
+                self.col_bar2.remove()
+
+            col_plot2 = self.ax_wQ2.matshow(max_Q.T,cmap='Reds',origin='lower')
+            #col_plot2 = self.ax_wQ2.matshow(max_Q,cmap='Reds',origin='lower')
+            self.ax_wQ2.set_xlabel('x')
+            self.ax_wQ2.set_ylabel('y')
+            self.col_bar2 = self.fig.colorbar(col_plot2,ax=self.ax_wQ2)
+            xt = sv[4]
+            yt = sv[5]
+
+            target = plt.Circle(((xt-lims[0])*N_disc,(yt-lims[0])*N_disc), 2.5*N_disc/20.0, color='black')
+            self.ax_wQ2.add_artist(target)
+
+
+
+    def plotRtot(self):
+        self.ax_R_tot.clear()
+        self.ax_R_tot.plot(self.R_tot_hist[8:])
 
     def plotStateParams(self):
-        self.agent.plotStateParams([self.ax_state_params1,self.ax_state_params2,self.ax_state_params3])
+        self.agent.plotStateParams([self.ax_state_params1,self.ax_state_params2,self.ax_state_params3,self.ax_state_params4])
 
 
     def createFigure(self):
@@ -488,12 +678,21 @@ class Agent:
         self.ax_state_params1 = self.axes[0,1]
         self.ax_state_params2 = self.axes[0,2]
         self.ax_state_params3 = self.axes[1,2]
-        self.plotAll()
+        self.ax_state_params4 = self.axes[1,1]
 
         self.ax_wQ = self.axes[2,1]
+        self.ax_wQ2 = self.axes[2,0]
         self.ax_theta_pi = self.axes[1,1]
 
-        self.ax_loc_vals = self.axes[2,0]
+        #self.ax_loc_vals = self.axes[2,0]
+        self.ax_R_tot = self.axes[2,2]
+        self.col_bar = None
+        self.col_bar2 = None
+
+        self.cm = LinearSegmentedColormap.from_list('my_cm', ['tomato','dodgerblue','seagreen','orange'], N=4)
+
+        self.last_target_pos = None
+        self.plotAll()
 
 
     def showFig(self):
@@ -501,7 +700,10 @@ class Agent:
 
 
 
-
+    def saveModel(self):
+        if self.features == 'DQN':
+            #print(self.forwardPassQ(torch.tensor([.2,.2,0,0,.8,.8],device=self.device,dtype=self.dtype)))
+            torch.save(self.policy_NN.state_dict(), self.model_fname)
 
 
 

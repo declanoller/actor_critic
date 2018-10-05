@@ -2,35 +2,45 @@ import Agent_Tests as at
 from Agent import Agent
 from PuckworldAgent import PuckworldAgent
 
+'''
 
-at.varyParam(N_steps=[10**3,10**4,10**5],N_runs=3,show_plot=False,features='AC')
+try:
+    -also not using ER/frozen network, just using ER with the same network, see
+    if it's noticeably worse
+
+    -hot damn, I think DDQN might have solved it??? why?
+
+
+
+looks like:
+-tanh lower var than relu
+-L1 better than L2, but def don't wanna clamp grad
+-80/10 is good
+-not super clear about HLN... 200 performs best, but 100 is the worst. So it could be coincidence?
+
+
+-do I want to be randomly initializing?
+
+'''
+
+
+
+ag = Agent(agent_class=PuckworldAgent,N_steps=10**4,N_batch=80,target_update=20,N_hidden_layer_nodes=50,epsilon=0.1,epsilon_decay=1.0,NL_fn='tanh',clamp_grad=False,loss_method='L2',double_DQN=True)
+#ag = Agent(agent_class=PuckworldAgent,N_steps=3*10**5,N_batch=80,target_update=20,N_hidden_layer_nodes=50,epsilon=0.1,epsilon_decay=1.0,NL_fn='tanh',clamp_grad=False,loss_method='L2',double_DQN=[False,True])
+
+path = '/home/declan/Documents/code/ActorCritic1/misc_runs/'
+path = '/home/declan/Documents/code/ActorCritic1/vary_epsilon_epsilon_decay__16-19-53/'
+model = 'model_gamma=1.00_alpha=0.10_epsilon=0_epsilon_decay=0_N_steps=100000_N_batch=80_N_hidden_layer_nodes=50_target_update=20_double_DQN=True_exp_buf_len=10000_NL_fn=tanh_loss_method=L2_clamp_grad=False_16-19-53'
+ag.loadModelPlay(path+model+'.model',show_plot=True,save_plot=True)
+#ag.DQNepisode(save_plot=True,show_plot=False)
 
 exit(0)
-#at.multipleEpisodesNewAgent(show_plot=True)
-
-ag = Agent(agent_class=PuckworldAgent,features='AC')
-ag.ACepisode(N_steps=10**3,show_plot=True)
 
 
 
+at.varyParam(N_steps=10**5,N_runs=3,N_batch=80,target_update=20,N_hidden_layer_nodes=50,epsilon=[0,.1,.9],epsilon_decay=[0,1.0,.9995],NL_fn='tanh',clamp_grad=False,loss_method='L2',double_DQN=True)
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+exit(0)
 
 
 
