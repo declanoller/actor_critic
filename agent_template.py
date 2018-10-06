@@ -13,16 +13,15 @@ class PuckworldAgent:
         self.ylims = np.array([-0.5,0.5])
         self.lims = np.array((self.xlims,self.ylims))
         self.max_dist = sqrt(np.ptp(self.xlims)**2 + np.ptp(self.ylims)**2)
-        self.a = kwargs.get('a',2.0)
+        self.a = kwargs.get('a',1.0)
         self.drag = 0.5
         self.time_step = kwargs.get('dt',10**-1)
-        self.reward_type = kwargs.get('reward','sparse')
 
         self.N_actions = 4
 
 
         self.circ_rad = np.ptp(self.xlims)/20.0
-        self.target_rad = 3*self.circ_rad
+        self.target_rad = 2*self.circ_rad
         self.resetTarget()
 
         self.pos0 = np.array([self.xlims.mean()/2.0,self.ylims.mean()/2.0])
@@ -103,19 +102,16 @@ class PuckworldAgent:
     def reward(self):
 
         assert self.target is not None, 'Need a target'
-
+        #Currently just gonna do a limited inverse from the pos of the target.
         max_R = 1
-
-        if self.reward_type == 'sparse':
-            if self.puckTargetDist() <= (self.target_rad + self.circ_rad):
-                return(max_R)
-            else:
-                return(-0.01)
-
-        if self.reward_type == 'shaped':
-            #return(max_R*(self.max_dist/2.0 - self.puckTargetDist()))
-            #These numbers will probably have to change if a, dt, or the dimensions change.
-            return(-1*self.puckTargetDist() + 0.45)
+        #return(max_R*(.5*self.max_dist-self.puckTargetDist()) - 1)
+        #return(1/(1/max_R + sqrt(np.sum((self.pos-self.target)**2)) ) )
+        #return(1.0/(self.puckTargetDist()**2 + 1/max_R))
+        #return(-max_R*self.puckTargetDist())
+        if self.puckTargetDist() <= (self.target_rad + self.circ_rad):
+            return(max_R)
+        else:
+            return(-0.01)
 
 
     def puckTargetDist(self):
@@ -129,12 +125,6 @@ class PuckworldAgent:
 
     def iterate(self,action):
         self.iterateEuler(action)
-
-        r = self.reward()
-        if r > 0:
-            self.resetTarget()
-
-        return(r,self.getStateVec())
 
 
     def resetStateValues(self):
@@ -187,7 +177,6 @@ class PuckworldAgent:
 
         ax3.clear()
         ax3.plot(self.a_hist[-1000:],label='a')
-        ax3.set_yticks([0,1,2,3])
         ax3.set_yticklabels(['U','D','L','R'])
         ax3.legend()
 
