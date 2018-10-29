@@ -1,10 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from math import sqrt
+from math import sqrt, pi, cos, sin
 
 
 
-class PuckworldAgent:
+class PuckworldAgent_radial:
 
 
     def __init__(self,**kwargs):
@@ -18,19 +18,22 @@ class PuckworldAgent:
         self.time_step = kwargs.get('dt',10**-1)
         self.reward_type = kwargs.get('reward','sparse')
 
+        #Here, the 4 actions will be, in order: forward (F), backward (B), CCW, clockwise turn (CW)
         self.N_actions = 4
+        #This is how many different angles it can have. I think 32 should be good.
+        self.d_theta = 2*pi/4.0
 
 
-        self.circ_rad = np.ptp(self.xlims)/20.0
-        self.target_rad = 3*self.circ_rad
+        self.circ_rad = np.ptp(self.xlims)/10.0
+        self.target_rad = 1*self.circ_rad
         self.resetTarget()
 
+        #For this, the state/position now has an (x,y) coord AND an angle from the horizontal right (0 degrees).
         self.pos0 = np.array([self.xlims.mean()/2.0,self.ylims.mean()/2.0])
+        self.angle0 = 0
         self.v0 = np.array([0.0,0.0])
         self.resetStateValues()
         self.accel_array = np.array([[0,1],[0,-1],[-1,0],[1,0]])
-
-
 
         self.N_state_terms = len(self.getStateVec())
 
@@ -39,6 +42,7 @@ class PuckworldAgent:
     def addToHist(self):
         self.pos_hist = np.concatenate((self.pos_hist,[self.pos]))
         self.v_hist = np.concatenate((self.v_hist,[self.v]))
+        self.angle_hist = np.concatenate((self.angle_hist,[self.angle]))
         self.t.append(self.t[-1] + self.time_step)
         self.r_hist.append(self.reward())
 
@@ -55,41 +59,45 @@ class PuckworldAgent:
         #Right now I'm just gonna make it sit against a wall if it goes to the
         #boundary, but it might be cool to make periodic bry conds, to see if it would
         #learn to zoom around it.
+        self.a_hist.append(action)
 
-        a = self.actionToAccel(action) - self.drag*self.v
+        if action in [0,1]:
 
-        v_next = self.v + a*self.time_step
-        pos_next = self.pos + v_next*self.time_step
+            a = self.actionToAccel(action) - self.drag*self.v
 
-        #To handle the walls
-        for i in [0,1]:
-            if pos_next[i] < (self.lims[i,0] + self.circ_rad):
-                pos_next[i] = self.lims[i,0] + self.circ_rad
-                v_next[i] = -v_next[i]
+            v_next = self.v + a*self.time_step
+            pos_next = self.pos + v_next*self.time_step
 
-            if pos_next[i] > (self.lims[i,1] - self.circ_rad):
-                pos_next[i] = self.lims[i,1] - self.circ_rad
-                v_next[i] = -v_next[i]
+            #To handle the walls
+            for i in [0,1]:
+                if pos_next[i] < (self.lims[i,0] + self.circ_rad):
+                    pos_next[i] = self.lims[i,0] + self.circ_rad
+                    v_next[i] = -v_next[i]
 
-        self.pos = pos_next
-        self.v = v_next
-        self.addToHist()
+                if pos_next[i] > (self.lims[i,1] - self.circ_rad):
+                    pos_next[i] = self.lims[i,1] - self.circ_rad
+                    v_next[i] = -v_next[i]
+
+            self.pos = pos_next
+            self.v = v_next
+            self.addToHist()
+
+        else:
+            #These should try to enforce it to be between -pi and +pi.
+            if action==2:
+                self.angle = (self.angle + self.d_theta)
+                if self.angle > pi:
+                    self.angle -= 2*pi
+            if action==3:
+                self.angle = (self.angle - self.d_theta)
+                if self.angle < -pi:
+                    self.angle += 2*pi
 
 
     def actionToAccel(self,action):
-        self.a_hist.append(action)
-        return(self.a*self.accel_array[action])
-
-
-
-
-
-    def getFeatureVec(self,state,action):
-        #Here, state is a 4-array of [x,y,vx,vy]
-        #So it returns a 4x4 matrix where each column is for a different action.
-        fv = np.zeros((self.N_state_terms,self.N_actions))
-        fv[:,action] = state
-        return(fv)
+        #This maps (0,1) to (1, -1)
+        a = -self.a*(2*(action - 0.5))
+        return(np.array([a*cos(self.angle), a*sin(self.angle)]))
 
 
     def getStateVec(self):
@@ -97,7 +105,7 @@ class PuckworldAgent:
         #return(np.concatenate((self.pos,self.v,self.target,(self.pos-self.target)**2)))
         #return(np.concatenate((self.pos,self.v,self.target,[(self.pos[0]-self.target[0])],[(self.pos[1]-self.target[1])])))
         #return(np.array([(self.pos[0]-self.target[0]),(self.pos[1]-self.target[1])]))
-        return(np.concatenate((self.pos,self.v,self.target)))
+        return(np.concatenate((self.pos, [self.angle/pi], self.v, self.target)))
 
 
     def reward(self):
@@ -140,11 +148,13 @@ class PuckworldAgent:
     def resetStateValues(self):
 
         self.pos = self.pos0
+        self.angle = self.angle0
         self.v = self.v0
 
         self.pos_hist = np.array([self.pos])
         self.v_hist = np.array([self.v])
         self.action_hist = [0]
+        self.angle_hist = [self.angle]
         self.t = [0]
         self.a_hist = [0]
         self.r_hist = []
@@ -163,6 +173,11 @@ class PuckworldAgent:
         puck = plt.Circle(tuple(self.pos), self.circ_rad, color='tomato')
         ax.add_artist(puck)
 
+        tail = self.pos + np.array([self.circ_rad*cos(self.angle + pi), self.circ_rad*sin(self.angle + pi)])
+        tweak = 0.4
+        w = 0.01
+        ax.arrow(tail[0], tail[1], tweak*2*self.circ_rad*cos(self.angle), tweak*2*self.circ_rad*sin(self.angle), width=w, head_width=8*w, color='black')
+
         if self.target is not None:
             target = plt.Circle(tuple(self.target), self.target_rad, color='seagreen')
             ax.add_artist(target)
@@ -178,12 +193,13 @@ class PuckworldAgent:
         ax1.clear()
         ax1.plot(self.pos_hist[:,0][-1000:],label='x')
         ax1.plot(self.pos_hist[:,1][-1000:],label='y')
+        ax1.plot(self.angle_hist[-1000:],label='theta')
         ax1.legend()
 
         ax2.clear()
         ax2.plot(self.a_hist[-1000:],label='a')
         ax2.set_yticks([0,1,2,3])
-        ax2.set_yticklabels(['U','D','L','R'])
+        ax2.set_yticklabels(['F', 'B', 'CCW', 'CW'])
         ax2.legend()
 
 

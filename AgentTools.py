@@ -8,37 +8,6 @@ import numpy as np
 import os
 
 
-def multipleEpisodesNewAgent(**kwargs):
-    st = fst.getCurTimeObj()
-    params = {}
-    params['N_eps'] = kwargs.get('N_eps',5)
-    params['N_steps'] = kwargs.get('N_steps',10**3)
-    show_plot = kwargs.get('show_plot',False)
-
-    params_str = fst.paramDictToFnameStr(params)
-    date_time = fst.getDateString()
-    dir = fst.makeLabelDateDir(params_str)
-    ext = '.png'
-    fname = params_str + date_time + ext
-
-    R_tots = []
-    for i in range(params['N_eps']):
-        ag = Agent(**kwargs,agent_class=PuckworldAgent,dir=dir)
-        r_tot = ag.episode(show_plot=False,save_plot=True)
-        R_tots.append(r_tot)
-
-    fig = plt.figure(figsize=(8,8))
-    ax = fig.subplots(1,1)
-    ax.plot(R_tots)
-    plt.savefig(fst.combineDirAndFile(dir,fname))
-    if show_plot:
-        plt.show()
-    plt.close()
-    print('\n\ntook {} to execute'.format(fst.getTimeDiffStr(st)))
-
-
-
-
 def varyParam(**kwargs):
 
     st = fst.getCurTimeObj()
@@ -110,7 +79,7 @@ def varyParam(**kwargs):
 
 
 
-def gifFromModel(model_fname,N_steps):
+def gifFromModel(model_fname, N_steps):
 
     #This will definitely shit the bed if you change the way the files are named.
     log_fname = model_fname.replace('model_','log_').replace('.model','.txt')
@@ -129,15 +98,30 @@ def gifFromModel(model_fname,N_steps):
         os.mkdir(path)
 
 
-    ag = Agent(agent_class=PuckworldAgent, **param_dict, dir=path)
-    ag.loadModelPlay(model_fname, show_plot=False, save_plot=True, make_gif=True, N_steps=20)
+    ag = Agent(agent_class=PuckworldAgent, **param_dict, dir=path, figsize=(6, 4))
+    ag.loadModelPlay(model_fname, show_plot=False, save_plot=True, make_gif=True, N_steps=N_steps)
 
     fst.gifFromImages(path, ds + '.gif')
 
 
 
 
+def plotRewardCurves(fnames,labels):
 
+    for fname, label in zip(fnames,labels):
+
+        dat = np.loadtxt(fname)
+
+        plt.plot(dat, label=label)
+
+
+    plt.legend()
+    plt.xlabel('time steps')
+    plt.ylabel('R_tot/(# time steps)')
+
+    plt.savefig('__'.join(labels) + '.png')
+
+    plt.show()
 
 
 

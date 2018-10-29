@@ -48,20 +48,20 @@ class Agent:
         self.params = {}
         self.params['gamma'] = kwargs.get('gamma',1.0)
         self.params['alpha'] = kwargs.get('alpha',10**-1)
-        self.params['beta'] = kwargs.get('beta',None)
-        self.params['epsilon'] = kwargs.get('epsilon',0.8)
-        self.params['epsilon_decay'] = kwargs.get('epsilon_decay',0.99)
+        self.params['beta'] = kwargs.get('beta',0.1)
+        self.params['epsilon'] = kwargs.get('epsilon',0.9)
+        self.params['epsilon_decay'] = kwargs.get('epsilon_decay',0.999)
 
         self.params['N_steps'] = kwargs.get('N_steps',10**3)
-        self.params['N_batch'] = int(kwargs.get('N_batch',20))
+        self.params['N_batch'] = int(kwargs.get('N_batch',60))
         self.params['N_hidden_layer_nodes'] = int(kwargs.get('N_hidden_layer_nodes',100))
-        self.params['target_update'] = int(kwargs.get('target_update',12))
+        self.params['target_update'] = int(kwargs.get('target_update',500))
         self.params['double_DQN'] = kwargs.get('double_DQN',False)
         self.params['exp_buf_len'] = int(kwargs.get('exp_buf_len',10000))
 
-        self.features = kwargs.get('features','DQN')
+        self.params['features'] = kwargs.get('features','DQN')
         self.params['NL_fn'] = kwargs.get('NL_fn','tanh')
-        self.params['loss_method'] = kwargs.get('loss_method','smoothL1')
+        self.params['loss_method'] = kwargs.get('loss_method','L2')
         self.params['clamp_grad'] = kwargs.get('clamp_grad',False)
 
         self.dir = kwargs.get('dir','misc_runs')
@@ -69,9 +69,10 @@ class Agent:
         self.base_fname = fst.paramDictToFnameStr(self.params) + '_' + self.date_time
         self.img_fname = fst.combineDirAndFile(self.dir, self.base_fname + '.png')
         self.log_fname = fst.combineDirAndFile(self.dir, 'log_' + self.base_fname + '.txt')
+        self.reward_fname = fst.combineDirAndFile(self.dir, 'reward_' + self.base_fname + '.txt')
         self.model_fname = fst.combineDirAndFile(self.dir, 'model_' + self.base_fname + '.model')
 
-
+        self.figsize = kwargs.get('figsize', (12, 8))
         self.R_tot_hist = []
 
 
@@ -86,6 +87,7 @@ class Agent:
 
 
         self.exp_pos = 0
+        self.N_actions = self.agent.N_actions
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         print('\nusing device:',self.device)
@@ -103,13 +105,13 @@ class Agent:
 
 
 
-        if self.features == 'linear':
+        if self.params['features'] == 'linear':
             self.fv_shape = self.agent.getFeatureVec(self.agent.getStateVec(),0).shape
             self.w_Q = torch.zeros(self.fv_shape, device=self.device, dtype=self.dtype, requires_grad=False)
             self.theta_pi = torch.zeros(self.fv_shape, device=self.device, dtype=self.dtype, requires_grad=True)
 
 
-        if self.features == 'DQN':
+        if self.params['features'] == 'DQN':
             #This is using a "target" Q network and a "policy" Q network, with
             #experience replay.
 
@@ -127,13 +129,13 @@ class Agent:
             self.target_NN.load_state_dict(self.policy_NN.state_dict())
             self.target_NN.eval()
             self.optimizer = optim.RMSprop(self.policy_NN.parameters())
-            self.samples_Q = []
+            self.experiences = []
 
             self.episode = self.DQNepisode
 
 
 
-        if self.features == 'AC':
+        if self.params['features'] == 'AC':
 
             D_in, H, D_out = self.agent.N_state_terms, self.params['N_hidden_layer_nodes'], self.agent.N_actions
 
@@ -143,29 +145,26 @@ class Agent:
             self.actor_NN = DQN(D_in,H,D_out,NL_fn=NL_fn,softmax=True)
             self.critic_NN = DQN(D_in,H,D_out,NL_fn=NL_fn)
             self.value_NN = DQN(D_in,H,1,NL_fn=NL_fn)
-            #self.target_critic_NN = DQN(D_in,H,D_out,NL_fn=NL_fn)
 
             if str(self.device) == 'cuda':
                 self.actor_NN.cuda()
                 self.critic_NN.cuda()
                 #self.target_critic_NN.cuda()
 
-            #self.target_critic_NN.load_state_dict(self.critic_NN.state_dict())
-            #self.target_critic_NN.eval()
             self.actor_optimizer = optim.RMSprop(self.actor_NN.parameters())
             self.critic_optimizer = optim.RMSprop(self.critic_NN.parameters())
             self.value_optimizer = optim.RMSprop(self.value_NN.parameters())
-            self.samples_Q = []
+            self.experiences = []
 
-            self.episode = self.ACepisode
+            self.episode = self.ACERepisode
 
 
 
 
     def updateFrozenQ(self):
-        if self.features == 'DQN':
+        if self.params['features'] == 'DQN':
             self.target_NN.load_state_dict(self.policy_NN.state_dict())
-        if self.features == 'AC':
+        if self.params['features'] == 'AC':
             self.target_critic_NN.load_state_dict(self.critic_NN.state_dict())
 
 
@@ -179,52 +178,17 @@ class Agent:
     def softmaxAction(self,state_vec):
 
         pi_vals = torch.squeeze(self.actor_NN(torch.unsqueeze(state_vec,dim=0)))
-        action = np.random.choice(list(range(len(pi_vals))),p=pi_vals.detach().numpy())
+        p = pi_vals.detach().numpy() #+ iota
+        #p = torch.softmax(torch.tensor(p), dim=0).detach().numpy().tolist()
+        #print(p)
+        #p=torch.softmax(iota + pi_vals.detach(),dim=0).numpy()
+        action = np.random.choice(list(range(len(pi_vals))),p=p)
         return(action)
 
         '''probs = torch.squeeze(self.actor_NN(torch.unsqueeze(s, dim=0)))
         print(probs)
         m = Categorical(probs)
         a = m.sample()'''
-
-        if self.features == 'linear':
-            #state_vec = self.agent.getStateVec()
-            #returns the softmax action, as well as the value of pi for (s,a).
-            exp_lin_combos = [torch.exp(torch.sum(torch.tensor(self.agent.getFeatureVec(state_vec,a))*self.theta_pi)) for a in range(self.agent.N_actions)]
-
-            norm = sum(exp_lin_combos)
-            p_actions = [t/norm for t in exp_lin_combos]
-            action = np.random.choice(list(range(self.agent.N_actions)),p=p_actions)
-            return(action)
-
-        if self.features == 'NN':
-            #print(torch.tensor(self.agent.getFeatureVec(state_vec,a)).shape)
-
-            pi_vals = torch.squeeze(torch.tensor(np.expand_dims(state_vec,axis=0)).mm(self.theta_pi_1).clamp(min=0).mm(self.theta_pi_2).softmax(dim=1))
-            #pi_vals = [torch.tensor(np.expand_dims(state_vec,axis=0)).mm(self.theta_pi_1).clamp(min=0).mm(self.theta_pi_2) for a in range(self.agent.N_actions)]
-            #norm = torch.sum(pi_vals)
-            #print(pi_vals)
-            #p_actions = [t/norm for t in pi_vals]
-            #print(p_actions)
-            action = np.random.choice(list(range(self.agent.N_actions)),p=pi_vals.detach().numpy())
-            return(action)
-
-
-    def policyVal(self,state_vec,action):
-
-        #state_vec = self.agent.getStateVec()
-        #returns the softmax action, as well as the value of pi for (s,a).
-        if self.features == 'linear':
-            exp_lin_combos = [torch.exp(torch.sum(torch.tensor(self.agent.getFeatureVec(state_vec,a))*self.theta_pi)) for a in range(self.agent.N_actions)]
-
-            norm = sum(exp_lin_combos)
-            p_actions = [t/norm for t in exp_lin_combos]
-            return(p_actions[action])
-
-        if self.features == 'NN':
-            pi_vals = torch.squeeze(torch.tensor(np.expand_dims(state_vec,axis=0)).mm(self.theta_pi_1).clamp(min=0).mm(self.theta_pi_2).softmax(dim=1))
-
-            return(pi_vals[action])
 
 
     def forwardPassQ(self,state_vec):
@@ -255,14 +219,16 @@ class Agent:
 
 
     def getRandomAction(self):
-        return(randint(0,self.agent.N_actions-1))
+        return(randint(0,self.N_actions-1))
 
 
     def addExperience(self,experience):
-        if len(self.samples_Q) < self.params['exp_buf_len']:
-            self.samples_Q.append(None)
-        self.samples_Q[self.exp_pos] = experience
+        if len(self.experiences) < self.params['exp_buf_len']:
+            self.experiences.append(None)
+        self.experiences[self.exp_pos] = experience
         self.exp_pos = (self.exp_pos + 1) % self.params['exp_buf_len']
+
+
 
 
 
@@ -280,9 +246,6 @@ class Agent:
 
         for i in range(self.params['N_steps']):
 
-            if i%int(self.params['N_steps']/10) == 0:
-                print('iteration ',i)
-
             self.updateEpsilon()
 
             if i%self.params['target_update']==0 and i>self.params['N_batch']:
@@ -294,14 +257,18 @@ class Agent:
             self.R_tot += r.item()
             self.R_tot_hist.append(self.R_tot/(i+1))
 
+            if i%int(self.params['N_steps']/10) == 0:
+                print('iteration {}, R_tot/i = {:.3f}'.format(i,self.R_tot_hist[-1]))
+
+
             a_next = self.epsGreedyAction(s_next)
 
             self.addExperience(Experience(s,a,r,s_next))
 
-            if len(self.samples_Q)>=2*self.params['N_batch']:
+            if len(self.experiences)>=2*self.params['N_batch']:
 
                 #Get random batch
-                batch_Q_samples = sample(self.samples_Q,self.params['N_batch'])
+                batch_Q_samples = sample(self.experiences,self.params['N_batch'])
                 experiences = Experience(*zip(*batch_Q_samples))
 
                 states = torch.stack(experiences.s)
@@ -344,10 +311,10 @@ class Agent:
         plt.close('all')
 
         self.saveModel()
+        self.saveRewardCurve()
 
         print('self.R_tot/N_steps: {:.2f}'.format(self.R_tot/self.params['N_steps']))
         return(self.R_tot/self.params['N_steps'])
-
 
 
     def ACepisode(self,show_plot=True,save_plot=False):
@@ -360,13 +327,7 @@ class Agent:
         self.initEpisode()
 
         s = self.getStateVec()
-        #a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(s,dim=0))))
         a = self.softmaxAction(s)
-        '''probs = torch.squeeze(self.actor_NN(torch.unsqueeze(s, dim=0)))
-        print(probs)
-        m = Categorical(probs)
-        a = m.sample()
-        print(a)'''
 
         for i in range(self.params['N_steps']):
 
@@ -379,47 +340,41 @@ class Agent:
                 print('iteration {}, R_tot/i = {:.3f}'.format(i,self.R_tot_hist[-1]))
 
 
-
-            #a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(s_next,dim=0))))
             a_next = self.softmaxAction(s_next)
-            '''probs2 = torch.squeeze(self.actor_NN(torch.unsqueeze(s_next, dim=0)))
+            '''
+            #This is probably better to do? I'm not sure if it needs it to backward() the things...
+            probs2 = torch.squeeze(self.actor_NN(torch.unsqueeze(s_next, dim=0)))
             m2 = Categorical(probs2)
             a_next = m2.sample()'''
 
-            #V_cur = torch.squeeze(self.value_NN(torch.unsqueeze(s, dim=0)))[a]
-            #V_next = torch.squeeze(self.value_NN(torch.unsqueeze(s_next, dim=0)))[a_next]
             V_cur = self.value_NN(torch.unsqueeze(s, dim=0))
             V_next = self.value_NN(torch.unsqueeze(s_next, dim=0))
 
-            Q_cur = torch.squeeze(self.critic_NN(torch.unsqueeze(s, dim=0)))[a]
-            Q_next = torch.squeeze(self.critic_NN(torch.unsqueeze(s_next, dim=0)))[a_next]
 
+            iota = 10**-4
+            pi = torch.squeeze(self.actor_NN(torch.unsqueeze(s, dim=0)))
+            pi = torch.softmax(pi + iota, dim=0)
 
-
-            pi = torch.squeeze(self.actor_NN(torch.unsqueeze(s, dim=0)))[a]
-            #print('pi: ',torch.squeeze(self.actor_NN(torch.unsqueeze(s, dim=0))))
+            if np.isnan(pi.detach().numpy()).any():
+                print('nan entry, stopping')
+                print('state: ',s)
+                print('pi: ',pi)
+                exit(0)
 
             if self.params['loss_method'] == 'smoothL1':
-                #TD0_error = F.smooth_l1_loss(Q_cur,(r + self.params['gamma']*Q_next).detach())
                 #There seems to be a bug in this, where it says that the "derivative for target (the 2nd arg) isn't implemented".
-                TD0_error = F.smooth_l1_loss(Q_cur, r + self.params['gamma']*Q_next)
+                TD0_error = F.smooth_l1_loss(V_cur, r + self.params['gamma']*V_next)
             if self.params['loss_method'] == 'L2':
-                #TD0_error = (r + self.params['gamma']*Q_next - Q_cur).pow(2).sum()
                 TD0_error = (r + self.params['gamma']*V_next - V_cur).pow(2).sum()
 
 
-            #J = -m.log_prob(a) * (Q_cur.detach())
-            #J = -Q_cur.detach()*pi
-            #J = -(Q_cur.detach())*torch.log(pi)
-            J = -(r + self.params['gamma']*V_next.detach() - V_cur.detach())*torch.log(pi)
-            #J = -(TD0_error.detach())*pi
+            #This sum is HIGHER for more entropy. So we want to put it in J with a negative, to maximize it. Err...seems backwards.
+            entropy = -self.params['beta']*sum(pi*torch.log(pi))
+            J = -(r + self.params['gamma']*V_next.detach() - V_cur.detach())*torch.log(pi[a]) - entropy
 
             self.actor_optimizer.zero_grad()
             self.critic_optimizer.zero_grad()
             self.value_optimizer.zero_grad()
-
-            #TD0_error.backward(retain_graph=True)
-            #J.backward()
 
             J.backward(retain_graph=True)
             TD0_error.backward()
@@ -436,7 +391,6 @@ class Agent:
 
             s = s_next
             a = a_next
-            #m1 = m2
 
             if show_plot:
                 self.plotAll()
@@ -448,6 +402,9 @@ class Agent:
             plt.savefig(self.img_fname)
 
         plt.close('all')
+
+        self.saveModel()
+        self.saveRewardCurve()
 
         print('self.R_tot/N_steps: {:.2f}'.format(self.R_tot/self.params['N_steps']))
         return(self.R_tot/self.params['N_steps'])
@@ -460,55 +417,71 @@ class Agent:
         if show_plot:
             self.showFig()
 
-        self.agent.initEpisode()
+        self.initEpisode()
 
         s = self.getStateVec()
-        a = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.tensor(s,device=self.device,dtype=self.dtype),dim=0))))
 
         for i in range(self.params['N_steps']):
-            self.updateEpsilon()
 
-            if i%self.params['target_update']==0 and i>self.params['N_batch']:
-                self.updateFrozenQ()
+            a = self.softmaxAction(s)
+            r, s_next = self.iterate(a)
 
-            self.agent.iterate(a)
-            r = self.getReward()
             self.R_tot += r.item()
+            self.R_tot_hist.append(self.R_tot/(i+1))
 
-            s_next = self.getStateVec()
-            a_next = torch.argmax(torch.squeeze(self.actor_NN(torch.unsqueeze(torch.tensor(s_next,device=self.device,dtype=self.dtype),dim=0))))
+            if i%int(self.params['N_steps']/10) == 0:
+                print('iteration {}, R_tot/i = {:.3f}'.format(i,self.R_tot_hist[-1]))
+
+
 
             self.addExperience(Experience(s,a,r,s_next))
 
-            if len(self.samples_Q)>=2*self.params['N_batch']:
+            if len(self.experiences)>=2*self.params['N_batch']:
+
 
                 #Get random batch
-                batch_Q_samples = sample(self.samples_Q,self.params['N_batch'])
-                experiences = Experience(*zip(*batch_Q_samples))
+                batch_samples = sample(self.experiences,self.params['N_batch'])
+                experiences = Experience(*zip(*batch_samples))
 
                 states = torch.stack(experiences.s)
                 actions = experiences.a
                 rewards = torch.stack(experiences.r)
                 states_next = torch.stack(experiences.s_next)
 
-                Q_cur = (self.critic_NN(states)[list(range(len(actions))),actions])
-                actions_next = torch.argmax(self.actor_NN(states_next),dim=1)
-                #Q_next = (self.target_critic_NN(states_next)[list(range(len(actions_next))),actions_next])
-                Q_next = (self.critic_NN(states_next)[list(range(len(actions_next))),actions_next])
+                V_cur = self.value_NN(states)
+                V_next = self.value_NN(states_next)
 
-                pi = (self.actor_NN(states)[list(range(len(actions))),actions])
+
+                a_next = self.softmaxAction(s_next)
+
+                iota = 10**-4
+                pi = self.actor_NN(states)
+                pi = torch.softmax(pi + iota, dim=1)
+
+                if np.isnan(pi.detach().numpy()).any():
+                    print('nan entry, stopping')
+                    print('state: ',s)
+                    print('pi: ',pi)
+                    exit(0)
 
                 if self.params['loss_method'] == 'smoothL1':
-                    TD0_error = F.smooth_l1_loss(Q_cur,(rewards + self.params['gamma']*Q_next).detach())
+                    #There seems to be a bug in this, where it says that the "derivative for target (the 2nd arg) isn't implemented".
+                    TD0_error = F.smooth_l1_loss(V_cur, r + self.params['gamma']*V_next)
                 if self.params['loss_method'] == 'L2':
-                    TD0_error = (rewards + self.params['gamma']*Q_next - Q_cur).pow(2).sum()#.clamp(max=1)
+                    TD0_error = (r + self.params['gamma']*V_next - V_cur).pow(2).sum()
 
-                J = (Q_cur*torch.log(pi)).sum()
+
+                #This sum is HIGHER for more entropy. So we want to put it in J with a negative, to maximize it. Err...seems backwards.
+
+                entropy = -self.params['beta']*torch.sum(pi*torch.log(pi),dim=1)/(pi.shape[0])
+                J = (-(r + self.params['gamma']*V_next.detach() - V_cur.detach())*torch.log(pi[list(range(len(actions))),actions]) - entropy).sum()
 
                 self.actor_optimizer.zero_grad()
                 self.critic_optimizer.zero_grad()
-                TD0_error.backward(retain_graph=True)
-                J.backward()
+                self.value_optimizer.zero_grad()
+
+                J.backward(retain_graph=True)
+                TD0_error.backward()
 
                 if self.params['clamp_grad']:
                     for param in self.actor_NN.parameters():
@@ -518,9 +491,9 @@ class Agent:
 
                 self.actor_optimizer.step()
                 self.critic_optimizer.step()
+                self.value_optimizer.step()
 
             s = s_next
-            a = a_next
 
             if show_plot:
                 self.plotAll()
@@ -532,6 +505,9 @@ class Agent:
             plt.savefig(self.img_fname)
 
         plt.close('all')
+
+        self.saveModel()
+        self.saveRewardCurve()
 
         print('self.R_tot/N_steps: {:.2f}'.format(self.R_tot/self.params['N_steps']))
         return(self.R_tot/self.params['N_steps'])
@@ -564,7 +540,7 @@ class Agent:
 
 
     def saveModel(self):
-        if self.features == 'DQN':
+        if self.params['features'] == 'DQN':
             #print(self.forwardPassQ(torch.tensor([.2,.2,0,0,.8,.8],device=self.device,dtype=self.dtype)))
             torch.save(self.policy_NN.state_dict(), self.model_fname)
 
@@ -623,13 +599,18 @@ class Agent:
 
 
 
+    def saveRewardCurve(self):
+        np.savetxt(self.reward_fname,self.R_tot_hist[10:])
+
+
 
     def plotAll(self):
         self.drawState()
         self.plotStateParams()
         self.plotRtot()
-        if self.features == 'DQN':
-            self.plotWeights()
+        if self.params['features'] == 'DQN':
+            pass
+            #self.plotWeights()
         #self.plotWeights()
 
 
@@ -725,7 +706,7 @@ class Agent:
 
     def createFigure(self):
 
-        self.fig, self.axes = plt.subplots(3,3,figsize=(12,8))
+        self.fig, self.axes = plt.subplots(3, 3, figsize=self.figsize)
         self.ax_state = self.axes[0,0]
         self.ax_state_params1 = self.axes[0,1]
         self.ax_state_params2 = self.axes[0,2]
