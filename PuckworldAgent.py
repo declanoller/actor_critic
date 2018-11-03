@@ -14,9 +14,15 @@ class PuckworldAgent:
         self.lims = np.array((self.xlims,self.ylims))
         self.max_dist = sqrt(np.ptp(self.xlims)**2 + np.ptp(self.ylims)**2)
         self.a = kwargs.get('a',1.0)
-        self.drag = 0.5
+        self.drag = kwargs.get('drag', 0.5)
         self.time_step = kwargs.get('dt',10**-1)
         self.reward_type = kwargs.get('reward','sparse')
+
+        self.passed_params = {}
+        check_params = ['a', 'drag', 'dt', 'reward']
+        for param in check_params:
+            if kwargs.get(param, None) is not None:
+                self.passed_params[param] = kwargs.get(param, None)
 
         self.N_actions = 4
 
@@ -34,6 +40,10 @@ class PuckworldAgent:
 
         self.N_state_terms = len(self.getStateVec())
 
+
+
+    def puckTargetDist(self):
+        return(sqrt(np.sum((self.pos-self.target)**2)))
 
 
     def addToHist(self):
@@ -82,21 +92,18 @@ class PuckworldAgent:
 
 
 
+    ###################### Required agent functions
 
 
-    def getFeatureVec(self,state,action):
-        #Here, state is a 4-array of [x,y,vx,vy]
-        #So it returns a 4x4 matrix where each column is for a different action.
-        fv = np.zeros((self.N_state_terms,self.N_actions))
-        fv[:,action] = state
-        return(fv)
+    def getPassedParams(self):
+        #This returns a dict of params that were passed to the agent, that apply to the agent.
+        #So if you pass it a param for 'reward', it will return that, but it won't return the
+        #default val if you didn't pass it.
+        return(self.passed_params)
 
 
     def getStateVec(self):
         assert self.target is not None, 'Need target to get state vec'
-        #return(np.concatenate((self.pos,self.v,self.target,(self.pos-self.target)**2)))
-        #return(np.concatenate((self.pos,self.v,self.target,[(self.pos[0]-self.target[0])],[(self.pos[1]-self.target[1])])))
-        #return(np.array([(self.pos[0]-self.target[0]),(self.pos[1]-self.target[1])]))
         return(np.concatenate((self.pos,self.v,self.target)))
 
 
@@ -115,11 +122,7 @@ class PuckworldAgent:
         if self.reward_type == 'shaped':
             #return(max_R*(self.max_dist/2.0 - self.puckTargetDist()))
             #These numbers will probably have to change if a, dt, or the dimensions change.
-            return(-1*self.puckTargetDist() + 0.45)
-
-
-    def puckTargetDist(self):
-        return(sqrt(np.sum((self.pos-self.target)**2)))
+            return(-0.5*self.puckTargetDist() + 0.4)
 
 
     def initEpisode(self):

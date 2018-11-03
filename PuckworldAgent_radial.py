@@ -18,6 +18,12 @@ class PuckworldAgent_radial:
         self.time_step = kwargs.get('dt',10**-1)
         self.reward_type = kwargs.get('reward','sparse')
 
+        self.passed_params = {}
+        check_params = ['a', 'dt', 'reward']
+        for param in check_params:
+            if kwargs.get(param, None) is not None:
+                self.passed_params[param] = kwargs.get(param, None)
+
         #Here, the 4 actions will be, in order: forward (F), backward (B), CCW, clockwise turn (CW)
         self.N_actions = 4
         #This is how many different angles it can have. I think 32 should be good.
@@ -37,6 +43,13 @@ class PuckworldAgent_radial:
 
         self.N_state_terms = len(self.getStateVec())
 
+
+    def getPassedParams(self):
+        #This returns a dict of params that were passed to the agent, that apply to the agent.
+        #So if you pass it a param for 'reward', it will return that, but it won't return the
+        #default val if you didn't pass it.
+
+        return(self.passed_params)
 
 
     def addToHist(self):
