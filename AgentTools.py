@@ -154,8 +154,6 @@ def plotRewardCurvesByVaryParam(dir, **kwargs):
     print('vary param vals:', vary_param_vals)
     vary_param_files = [glob.glob(fst.addTrailingSlashIfNeeded(dir) + 'reward_' + '*' + val + '*' + '.txt') for val in vary_param_vals]
 
-    #print(vary_param_files)
-
     fig, ax = plt.subplots(1, 1, figsize=(10,8))
 
     line_cols = ['darkred', 'mediumblue', 'darkgreen', 'goldenrod', 'purple', 'darkorange', 'black']
@@ -173,12 +171,9 @@ def plotRewardCurvesByVaryParam(dir, **kwargs):
 
     for i, (val, file_group) in enumerate(zip(vary_param_vals, vary_param_files)):
         print('val:',val)
-        print('file group:',file_group)
         dat_array = np.array([np.loadtxt(fname) for fname in file_group])
         avg = np.mean(dat_array, axis=0)*scale_factors[i] + offsets[i]
         std = np.std(dat_array, axis=0)*scale_factors[i]
-        print(avg.shape)
-        print(std.shape)
         if max((avg + N_stds*std)[N_skip:]) > max_total:
             max_total = max((avg + N_stds*std)[N_skip:])
         if min((avg - N_stds*std)[N_skip:]) < min_total:

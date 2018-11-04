@@ -9,7 +9,7 @@ from PuckworldAgent_radial import PuckworldAgent_radial
 
 
 
-at.varyParam(N_steps=10**5, N_runs=3, advantage=True, beta=[0, 10**-5, 10**-4, 10**-3, 10**-2, 10**-1, 1], target_update=12, N_batch=20, N_hidden_layer_nodes=50, features='AC', NL_fn='relu')
+at.varyParam(N_steps=10**5, N_runs=3, advantage=True, beta=[3*10**-3, 6*10**-3, 10**-2, 3*10**-2, 6*10**-2, 10**-1], target_update=12, N_batch=20, N_hidden_layer_nodes=50, features='AC', NL_fn='relu')
 
 
 exit(0)
