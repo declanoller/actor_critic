@@ -58,7 +58,7 @@ def varyParam(**kwargs):
         plt.plot(R_tots,'ro-')
 
     axes.set_xticks(list(range(len(R_tots))))
-    labels = ['\n'.join(['{}={}'.format(k,v) for k,v in param.items()]) for param in vary_param_tups]
+    labels = ['\n'.join(fst.dictToStringList(param)) for param in vary_param_tups]
     axes.set_xticklabels(labels, rotation='vertical')
     axes.set_ylabel('Total reward')
     plt.tight_layout()
@@ -78,6 +78,9 @@ def varyParam(**kwargs):
 
 
     print('\n\ntook {} to execute'.format(fst.getTimeDiffStr(st)))
+
+    plotRewardCurvesByVaryParam(dir)
+
     if show_plot:
         plt.show()
 
@@ -148,7 +151,7 @@ def plotRewardCurvesByVaryParam(dir, **kwargs):
         vary_param_vals = f.read().split('\n')
 
     vary_param_vals = [x.split('\t')[0] for x in vary_param_vals if x!='']
-
+    print('vary param vals:', vary_param_vals)
     vary_param_files = [glob.glob(fst.addTrailingSlashIfNeeded(dir) + 'reward_' + '*' + val + '*' + '.txt') for val in vary_param_vals]
 
     #print(vary_param_files)
@@ -169,11 +172,13 @@ def plotRewardCurvesByVaryParam(dir, **kwargs):
     offsets = kwargs.get('offsets', np.zeros(len(vary_param_vals)))
 
     for i, (val, file_group) in enumerate(zip(vary_param_vals, vary_param_files)):
-
+        print('val:',val)
+        print('file group:',file_group)
         dat_array = np.array([np.loadtxt(fname) for fname in file_group])
         avg = np.mean(dat_array, axis=0)*scale_factors[i] + offsets[i]
         std = np.std(dat_array, axis=0)*scale_factors[i]
-
+        print(avg.shape)
+        print(std.shape)
         if max((avg + N_stds*std)[N_skip:]) > max_total:
             max_total = max((avg + N_stds*std)[N_skip:])
         if min((avg - N_stds*std)[N_skip:]) < min_total:

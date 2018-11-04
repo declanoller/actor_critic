@@ -7,7 +7,7 @@ from math import sqrt
 class PuckworldAgent:
 
 
-    def __init__(self,**kwargs):
+    def __init__(self, **kwargs):
 
         self.xlims = np.array([-0.5,0.5])
         self.ylims = np.array([-0.5,0.5])
@@ -147,7 +147,6 @@ class PuckworldAgent:
 
         self.pos_hist = np.array([self.pos])
         self.v_hist = np.array([self.v])
-        self.action_hist = [0]
         self.t = [0]
         self.a_hist = [0]
         self.r_hist = []

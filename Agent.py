@@ -65,6 +65,9 @@ class Agent:
         self.params['NL_fn'] = kwargs.get('NL_fn','tanh')
         self.params['loss_method'] = kwargs.get('loss_method','L2')
 
+        self.params['advantage'] = kwargs.get('advantage', True)
+        self.params['beta'] = kwargs.get('beta',0.1)
+
         self.dir = kwargs.get('dir','misc_runs')
         self.date_time = kwargs.get('date_time',fst.getDateString())
         self.base_fname = fst.paramDictToFnameStr(self.params) + '_' + self.date_time
@@ -77,8 +80,7 @@ class Agent:
 
         self.params['alpha'] = kwargs.get('alpha',10**-1)
         self.params['ACER'] = kwargs.get('ACER', False)
-        self.params['advantage'] = kwargs.get('advantage', True)
-        self.params['beta'] = kwargs.get('beta',0.1)
+
         self.params['exp_buf_len'] = int(kwargs.get('exp_buf_len',10000))
         self.params['gamma'] = kwargs.get('gamma',1.0)
         self.params['clamp_grad'] = kwargs.get('clamp_grad',False)
@@ -351,7 +353,7 @@ class Agent:
             else:
                 critic_cur = self.forwardPass(self.critic_NN, s)[a]
                 critic_next = self.forwardPass(self.critic_NN, s_next)[a_next]
-                critic_value = critic_cur
+                critic_value = critic_cur.detach()
 
             if self.params['loss_method'] == 'smoothL1':
                 #There seems to be a bug in this, where it says that the "derivative for target (the 2nd arg) isn't implemented".
@@ -360,8 +362,9 @@ class Agent:
                 TD0_error = (r + self.params['gamma']*critic_next - critic_cur).pow(2).sum()
 
 
-
             pi = self.forwardPass(self.actor_NN, s)
+            iota = 10**-6
+            pi = (pi + iota)/sum(pi + iota)
             #This sum is HIGHER for more entropy. So we want to put it in J with a negative, to maximize it. Err...seems backwards.
             entropy = -self.params['beta']*sum(pi*torch.log(pi))
             J = -critic_value*torch.log(pi[a]) - entropy
@@ -555,20 +558,15 @@ class Agent:
             if i%int(N_steps/10) == 0:
                 print('iteration ',i)
 
-
             self.updateEpsilon()
-
 
             s = self.getStateVec()
             a = self.epsGreedyAction(self.policy_NN, s)
 
-            self.agent.iterate(a)
-            r = self.getReward()
+            r, s_next = self.iterate(a)
+
             self.R_tot += r.item()
             self.R_tot_hist.append(self.R_tot/(i+1))
-
-            if r.item() > 0:
-                self.agent.resetTarget()
 
             if show_plot:
                 self.plotAll()
@@ -585,7 +583,6 @@ class Agent:
 
         plt.close('all')
 
-        print('self.R_tot/N_steps: {:.2f}'.format(self.R_tot/N_steps))
         return(self.R_tot/N_steps)
 
 
